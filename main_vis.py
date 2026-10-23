@@ -119,12 +119,8 @@ def main(args, send_queue, receive_queue):
 
             # dd_s_time = time.time()
   
-            if count_episodes < 5:
-                action = 0
-            else:
-                agent_state = env.sim.get_agent_state()
-                
-                action = agent.act(obs, agent_state, send_queue, receive_queue)
+            agent_state = env.sim.get_agent_state()
+            action = agent.act(obs, agent_state, send_queue, receive_queue)
 
             if action == None:
                 continue

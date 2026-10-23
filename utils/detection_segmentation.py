@@ -33,15 +33,6 @@ EFFICIENTSAM_PATH = os.path.join(GSA_PATH, "EfficientSAM")
 sys.path.append(GSA_PATH) # This is needed for the following imports in this file
 sys.path.append(TAG2TEXT_PATH) # This is needed for some imports in the Tag2Text files
 sys.path.append(EFFICIENTSAM_PATH)
-try:
-    from ram.models import tag2text, ram
-    from ram import inference_tag2text, inference_ram
-    import torchvision.transforms as TS
-except ImportError as e:
-    print("Tag2text sub-package not found. Please check your GSA_PATH. ")
-    raise e
-
-
 # Tag2Text checkpoint
 # TAG2TEXT_CHECKPOINT_PATH = os.path.join(GSA_PATH, "./tag2text_swin_14m.pth")
 RAM_CHECKPOINT_PATH = os.path.join(GSA_PATH, "./ram_swin_large_14m.pth")

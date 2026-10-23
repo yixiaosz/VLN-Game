@@ -112,11 +112,8 @@ def main(args, send_queue, receive_queue):
         start_ep = time.time()
         while not env.episode_over:
             
-            if count_episodes < 253:
-                action = 0
-            else:
-                agent_state = env.sim.get_agent_state()
-                action = agent.act(obs, agent_state, send_queue, receive_queue)
+            agent_state = env.sim.get_agent_state()
+            action = agent.act(obs, agent_state, send_queue, receive_queue)
 
             if action == None:
                 continue
