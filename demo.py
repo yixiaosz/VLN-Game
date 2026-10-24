@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import shlex
 import subprocess
@@ -9,8 +10,42 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 ENV_PYTHON = Path.home() / "miniforge3/envs/vlngame/bin/python"
 DEFAULT_GSA = Path.home() / "Grounded-Segment-Anything"
-DEEPSEEK_ENV = Path.home() / ".config/vlngame/deepseek.env"
-MODELS = [("DeepSeek", "deepseek-flash")]
+API_ENV = Path.home() / ".config/vlngame/api.env"
+
+DEFAULT_MODELS = [
+    {
+        "name": "GPT-4o",
+        "id": "openai/gpt-4o",
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_env": "OPENROUTER_API_KEY",
+        "supports_temperature": True,
+        "options": {},
+    },
+    {
+        "name": "GPT-4o mini",
+        "id": "openai/gpt-4o-mini",
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_env": "OPENROUTER_API_KEY",
+        "supports_temperature": True,
+        "options": {},
+    },
+    {
+        "name": "GPT-6 Luna",
+        "id": "openai/gpt-6-luna",
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_env": "OPENROUTER_API_KEY",
+        "supports_temperature": False,
+        "options": {"reasoning": {"effort": "none"}},
+    },
+    {
+        "name": "DeepSeek V4.1 Flash",
+        "id": "deepseek-flash",
+        "base_url": "https://api.deepseek.com",
+        "key_env": "DEEPSEEK_API_KEY",
+        "supports_temperature": True,
+        "options": {"thinking": {"type": "disabled"}},
+    },
+]
 
 MODE_NAMES = {"objectnav": "ObjectNav", "llm": "Language / VLM"}
 TOTALS = {"objectnav": 2000, "llm": 316}
@@ -27,6 +62,48 @@ def ask_yes_no(prompt, default_yes=True):
     if not value:
         return default_yes
     return value in {"y", "yes"}
+
+
+def load_models():
+    raw = os.environ.get("VLN_MODELS")
+    if not raw:
+        return list(DEFAULT_MODELS)
+    try:
+        models = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid VLN_MODELS JSON: {exc}")
+        return None
+    if not isinstance(models, list) or not models:
+        print("VLN_MODELS must be a non-empty JSON list.")
+        return None
+
+    valid = []
+    for index, model in enumerate(models, start=1):
+        if not isinstance(model, dict):
+            print(f"VLN_MODELS entry {index} must be an object.")
+            return None
+        for field in ("name", "id", "base_url", "key_env"):
+            value = model.get(field)
+            if not isinstance(value, str) or not value.strip():
+                print(f"VLN_MODELS entry {index} is missing {field}.")
+                return None
+        options = model.get("options", {})
+        if not isinstance(options, dict):
+            print(f"VLN_MODELS entry {index} options must be an object.")
+            return None
+        supports_temperature = model.get("supports_temperature", True)
+        if not isinstance(supports_temperature, bool):
+            print(f"VLN_MODELS entry {index} supports_temperature must be true or false.")
+            return None
+        valid.append({
+            "name": model["name"],
+            "id": model["id"],
+            "base_url": model["base_url"],
+            "key_env": model["key_env"],
+            "supports_temperature": supports_temperature,
+            "options": options,
+        })
+    return valid
 
 
 def choose_mode():
@@ -84,21 +161,21 @@ def choose_count(mode):
             input("Press Enter to continue...")
 
 
-def choose_model():
+def choose_model(models):
     while True:
         clear_screen()
         print("Language / VLM model")
         print()
-        for index, (name, model_id) in enumerate(MODELS, start=1):
-            print(f"{index}) {name} ({model_id})")
+        for index, model in enumerate(models, start=1):
+            print(f"{index}) {model['name']} ({model['id']})")
         print("b) Back")
         choice = input("\nSelect: ").strip().lower()
         if choice in {"b", "back"}:
             return None
         if choice.isdigit():
             index = int(choice)
-            if 1 <= index <= len(MODELS):
-                return MODELS[index - 1]
+            if 1 <= index <= len(models):
+                return models[index - 1]
         print("Invalid choice.")
         input("Press Enter to continue...")
 
@@ -113,7 +190,7 @@ def show_summary(mode, count, model):
     else:
         print(f"Episodes: {count}")
     if model is not None:
-        print(f"Model:    {model[0]} ({model[1]})")
+        print(f"Model:    {model['name']} ({model['id']})")
     print("GUI:      Open3D")
 
     if count == -1:
@@ -147,12 +224,17 @@ def build_launch(mode, count, model):
         return None
 
     if mode == "llm":
-        if not env.get("DEEPSEEK_API_KEY"):
-            print("DEEPSEEK_API_KEY is not set.")
-            print(f"Run: source {shlex.quote(str(DEEPSEEK_ENV))}")
+        key_env = model["key_env"]
+        api_key = env.get(key_env)
+        if not api_key:
+            print(f"{key_env} is not set.")
+            print(f"Run: source {shlex.quote(str(API_ENV))}")
             return None
-        env.setdefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-        env["VLN_MODEL"] = model[1]
+        env["VLN_API_KEY"] = api_key
+        env["VLN_API_BASE"] = model["base_url"]
+        env["VLN_MODEL"] = model["id"]
+        env["VLN_MODEL_OPTIONS"] = json.dumps(model["options"])
+        env["VLN_MODEL_SUPPORTS_TEMPERATURE"] = "1" if model["supports_temperature"] else "0"
 
     script = "main_vis.py" if mode == "objectnav" else "main_vln.py"
     command = [str(python), script, "-v", "1"]
@@ -194,7 +276,11 @@ def main():
 
             model = None
             if mode == "llm":
-                model = choose_model()
+                models = load_models()
+                if models is None:
+                    input("Press Enter to return to the menu...")
+                    continue
+                model = choose_model(models)
                 if model is None:
                     continue
 

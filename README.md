@@ -18,7 +18,7 @@ For language-goal navigation, load the private API environment:
 
 ```bash
 # just an example
-source "$HOME/.config/vlngame/deepseek.env"
+source "$HOME/.config/vlngame/api.env"
 ```
 
 ## Quick launcher
@@ -27,7 +27,7 @@ source "$HOME/.config/vlngame/deepseek.env"
 python demo.py
 ```
 
-The launcher prompts for ObjectNav or Language / VLM, 5/full/custom episode count, and the language model. It launches the same GUI entrypoints described below.
+The launcher prompts for ObjectNav or Language / VLM, 5/full/custom episode count, and the language model. It launches the same GUI entrypoints described below. The model menu comes from `VLN_MODELS` in `api.env`, so adding or removing an entry updates the menu.
 
 ## ObjectNav demo
 

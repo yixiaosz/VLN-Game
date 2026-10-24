@@ -19,11 +19,10 @@ gpt_name = [
 
 args = get_args()
 
-api_key = args.api
+api_key = os.environ.get("VLN_API_KEY") or args.api
 if not api_key or api_key == "xx-xxxx":
     api_key = (
-        os.environ.get("VLN_API_KEY")
-        or os.environ.get("DEEPSEEK_API_KEY")
+        os.environ.get("DEEPSEEK_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
         or api_key
     )
@@ -37,7 +36,24 @@ api_base = (
 
 text_model = os.environ.get("VLN_MODEL") or "gpt-4o"
 
-def _provider_options(model_name):
+def _env_bool(name, default=True):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+supports_temperature = _env_bool("VLN_MODEL_SUPPORTS_TEMPERATURE", True)
+
+def _model_options(model_name):
+    raw = os.environ.get("VLN_MODEL_OPTIONS")
+    if raw:
+        try:
+            options = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid VLN_MODEL_OPTIONS: {exc}") from exc
+        if not isinstance(options, dict):
+            raise ValueError("VLN_MODEL_OPTIONS must be a JSON object")
+        return options
     if model_name.startswith("deepseek") or "deepseek" in api_base:
         return {"thinking": {"type": "disabled"}}
     return {}
@@ -53,13 +69,21 @@ def chat_with_gpt(chat_history):
     retries = 10    
     while retries > 0:  
         try: 
-            response = openai.ChatCompletion.create(
-                model=text_model,
-                response_format = { "type": "json_object" },
-                messages=chat_history,
-                temperature=0.5,
-                **_provider_options(text_model),
-            )
+            params = {
+                "model": text_model,
+                "response_format": {"type": "json_object"},
+                "messages": chat_history,
+                "max_tokens": 512,
+            }
+            params.update(_model_options(text_model))
+            params["model"] = text_model
+            params["messages"] = chat_history
+            params["response_format"] = {"type": "json_object"}
+            if supports_temperature:
+                params.setdefault("temperature", 0.5)
+            else:
+                params.pop("temperature", None)
+            response = openai.ChatCompletion.create(**params)
 
             response_message = response.choices[0].message['content']
             # print(response_message)
@@ -91,13 +115,21 @@ def chat_with_gpt4v(chat_history, gpt_type = args.gpt_type, json_mode = True):
         try: 
             payload = {
                 "model": model_name,
-                "temperature": 1.1,
                 "messages": chat_history,
                 "max_tokens": 100,
-                **_provider_options(model_name),
             }
+            payload.update(_model_options(model_name))
+            payload["model"] = model_name
+            payload["messages"] = chat_history
+            payload.setdefault("max_tokens", 100)
+            if supports_temperature:
+                payload.setdefault("temperature", 1.1)
+            else:
+                payload.pop("temperature", None)
             if json_mode:
                 payload["response_format"] = { "type": "json_object" }
+            else:
+                payload.pop("response_format", None)
             
             response = requests.post(api_base.rstrip("/") + "/chat/completions", headers=headers, json=payload)
 

@@ -169,17 +169,19 @@ python main_vis.py --episode_count 5 -v 1
 ```
 
 Language-goal navigation requires an API key and the Open3D GUI. The local
-DeepSeek key is stored in a private env file outside the repo:
+provider and model configuration is stored in a private env file outside the
+repo:
 
 ```bash
-source "$HOME/.config/vlngame/deepseek.env"
+source "$HOME/.config/vlngame/api.env"
 python main_vln.py -v 1
 ```
 
-The code reads `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, and `VLN_MODEL` from
-the environment. Do not pass the key through `--api` or store it in the
-repo. Environment configuration is preferred. The original OpenAI `--api`
-flow also works.
+The code reads `VLN_API_KEY`, `VLN_API_BASE`, `VLN_MODEL`,
+`VLN_MODEL_OPTIONS`, and `VLN_MODEL_SUPPORTS_TEMPERATURE` from the
+environment. `demo.py` sets these from `VLN_MODELS`; each model entry names its
+key variable. Do not pass keys through `--api` or store them in the repo.
+The original OpenAI `--api` flow also works.
 
 Do not use `main_vis_vec.py` or `main_vln_vec.py`; the vector variants
 target an older API and remain outside the current single-process setup.
@@ -207,15 +209,19 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
    - The dead paths/constants and commented code were left untouched to keep
      the diff minimal.
 
-4. **`utils/chat_utils.py`** — added optional environment-based API
-   configuration for OpenAI-compatible providers.
-   - Reads `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, and `VLN_MODEL` from the
+4. **`utils/chat_utils.py`** — generic OpenAI-compatible API configuration.
+   - Reads `VLN_API_KEY`, `VLN_API_BASE`, `VLN_MODEL`,
+     `VLN_MODEL_OPTIONS`, and `VLN_MODEL_SUPPORTS_TEMPERATURE` from the
      environment, with the original OpenAI defaults preserved.
-   - Disables DeepSeek thinking mode automatically; otherwise reasoning
-     consumes the 100-token response budget and returns empty content.
-   - Reason: load the local DeepSeek key from the environment, keeping it out
-     of `argv` and the repository. The paper used GPT-4o; DeepSeek is a local
-     substitute, so language metrics reflect that provider.
+   - Supports OpenRouter GPT-4o, GPT-4o mini, and GPT-6 Luna, plus direct
+     DeepSeek `deepseek-flash`.
+   - GPT-6 Luna uses `reasoning.effort=none` and omits temperature. DeepSeek
+     uses `thinking.type=disabled`.
+   - The parsing request has a 512-token output cap. OpenRouter otherwise
+     reserves a large default output budget and rejects low-credit keys.
+   - Reason: select a language model without putting keys in `argv` or the
+     repository. The paper used GPT-4o, so language metrics reflect the
+     selected provider.
 
 5. **`agents/system_prompt.py`, `utils/equ_ranking.py`, `utils/chat_utils.py`**
    — the discriminator now returns plain-text `correct` or `incorrect`.
@@ -234,6 +240,8 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
    - Reason: release the process and GPU promptly when a demo ends.
 
 7. **`demo.py`** — added an interactive launcher for mode, episode count, and model selection.
+   - Reads `VLN_MODELS` from `api.env`; the model menu adapts to the list.
+   - Resolves each model's `key_env` and sets the child `VLN_*` variables.
    - Reason: simplify local GUI demos; it calls the existing entrypoints.
 
 #### Data compatibility changes
@@ -283,14 +291,17 @@ ObjectNav GUI smoke run: 5 episodes, 4 successes, SPL 0.235. Episode 1
 failed; episodes 2-5 succeeded. The Open3D GUI appeared and the manual query
 box worked.
 
-DeepSeek text and vision API smoke checks passed with `deepseek-flash`. A
-6-episode language batch reached the generator/equilibrium path in all five
-new episodes; episode 5 accepted a candidate and succeeded (success 0.200,
-SPL 0.010). The batch predates the discriminator plain-text change, and a
-rerun after that change is pending.
+API smoke checks passed for the four configured models: GPT-4o, GPT-4o
+mini, GPT-6 Luna, and DeepSeek V4.1 Flash. Each returned valid text JSON,
+generator JSON, and discriminator plain text. GPT-4o required retries because
+OpenRouter returned empty content on some attempts.
 
-DeepSeek is a local substitute for the paper's GPT-4o provider; treat
-language metrics as smoke-test results.
+A 6-episode DeepSeek language batch reached the generator/equilibrium path in
+all five new episodes; episode 5 accepted a candidate and succeeded (success
+0.200, SPL 0.010). The batch predates the discriminator plain-text change and
+the model registry, so a rerun is pending.
+
+Language metrics reflect the selected provider; the paper used GPT-4o.
 
 The GUI-close stop was tested on both entrypoints; both processes exited and
 released the GPU. The interactive launcher was tested with an ObjectNav
