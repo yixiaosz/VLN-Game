@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import ast
 import jsonschema
@@ -18,10 +19,33 @@ gpt_name = [
 
 args = get_args()
 
+api_key = args.api
+if not api_key or api_key == "xx-xxxx":
+    api_key = (
+        os.environ.get("VLN_API_KEY")
+        or os.environ.get("DEEPSEEK_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or api_key
+    )
+
+api_base = (
+    os.environ.get("VLN_API_BASE")
+    or os.environ.get("DEEPSEEK_BASE_URL")
+    or os.environ.get("OPENAI_BASE_URL")
+    or "https://api.openai.com/v1"
+)
+
+text_model = os.environ.get("VLN_MODEL") or "gpt-4o"
+
+def _provider_options(model_name):
+    if model_name.startswith("deepseek") or "deepseek" in api_base:
+        return {"thinking": {"type": "disabled"}}
+    return {}
+
 import openai
 from openai.error import OpenAIError
-openai.api_key = args.api
-api_key = args.api
+openai.api_key = api_key
+openai.api_base = api_base
 
 
 
@@ -30,15 +54,16 @@ def chat_with_gpt(chat_history):
     while retries > 0:  
         try: 
             response = openai.ChatCompletion.create(
-                model='gpt-4o', 
+                model=text_model,
                 response_format = { "type": "json_object" },
                 messages=chat_history,
                 temperature=0.5,
+                **_provider_options(text_model),
             )
 
             response_message = response.choices[0].message['content']
             # print(response_message)
-            print('gpt-4o' + " response: ")
+            print(text_model + " response: ")
             try:
                 ground_json = ast.literal_eval(response_message)
                 break
@@ -57,25 +82,34 @@ def chat_with_gpt(chat_history):
     print(response_message)
     return response_message
 
-def chat_with_gpt4v(chat_history, gpt_type = args.gpt_type):
+def chat_with_gpt4v(chat_history, gpt_type = args.gpt_type, json_mode = True):
     
+    model_name = os.environ.get("VLN_MODEL") or gpt_name[gpt_type]
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     retries = 10    
     while retries > 0:  
         try: 
             payload = {
-                "model": gpt_name[gpt_type],
-                "response_format": { "type": "json_object" },
+                "model": model_name,
                 "temperature": 1.1,
                 "messages": chat_history,
-                "max_tokens": 100
+                "max_tokens": 100,
+                **_provider_options(model_name),
             }
+            if json_mode:
+                payload["response_format"] = { "type": "json_object" }
             
-            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+            response = requests.post(api_base.rstrip("/") + "/chat/completions", headers=headers, json=payload)
 
             response_message = response.json()["choices"][0]["message"]["content"]
             # print(response_message)
-            print(gpt_name[gpt_type] + " response: ")
+            print(model_name + " response: ")
+            if not json_mode:
+                if response_message and response_message.strip():
+                    break
+                retries -= 1
+                time.sleep(5)
+                continue
             try:
                 ground_json = ast.literal_eval(response_message)
                 break

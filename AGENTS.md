@@ -9,8 +9,8 @@ game-theoretic VLM ranking.
 
 The personal purpose of this local checkout is to reproduce the original
 paper's algorithm and probe its performance in simulated Habitat/HM3D
-environments. The target is a faithful reproduction, not a refactor or a
-redesign.
+environments. The target is a faithful reproduction. Refactors and redesigns
+are outside scope.
 
 "Working" means:
 
@@ -76,7 +76,7 @@ Close other GPU-heavy applications before GUI or evaluation runs.
 - Python 3.10.22
 - `cmake` 3.25.3
 - CUDA toolkit 12.1.66 (`nvcc`) inside the conda env
-- No `/usr/local/cuda` dependency
+- CUDA comes from the conda environment
 
 Activate with:
 
@@ -124,7 +124,7 @@ Grounding-SAM assets:
 - `$HOME/Grounded-Segment-Anything/groundingdino_swint_ogc.pth` (~662 MB)
 - `$HOME/Grounded-Segment-Anything/EfficientSAM/mobile_sam.pt` (~39 MB)
 
-The SAM ViT-H checkpoint is not required for the current MobileSAM setup.
+The current MobileSAM setup uses only `mobile_sam.pt`.
 CLIP ViT-H-14 weights are downloaded by `open_clip` on first use.
 
 Datasets and scenes are local and untracked. HM3D scene assets live outside
@@ -156,6 +156,8 @@ Do not record those credentials anywhere in the repo.
 
 ### Smoke Run Commands
 
+Interactive launcher: `python demo.py` prompts for mode, episode count, and model, then launches the GUI.
+
 ObjectNav with GUI:
 
 ```bash
@@ -166,19 +168,25 @@ cd "$HOME/VLN-Game"
 python main_vis.py --episode_count 5 -v 1
 ```
 
-Language-goal navigation requires an OpenAI API key and the Open3D GUI:
+Language-goal navigation requires an API key and the Open3D GUI. The local
+DeepSeek key is stored in a private env file outside the repo:
 
 ```bash
-python main_vln.py --api "$OPENAI_API_KEY" -v 1
+source "$HOME/.config/vlngame/deepseek.env"
+python main_vln.py -v 1
 ```
 
-Do not use `main_vis_vec.py` or `main_vln_vec.py`; they are original
-multiprocessing variants that reference older/missing classes and are not
-part of the current single-process reproduction.
+The code reads `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, and `VLN_MODEL` from
+the environment. Do not pass the key through `--api` or store it in the
+repo. Environment configuration is preferred. The original OpenAI `--api`
+flow also works.
+
+Do not use `main_vis_vec.py` or `main_vln_vec.py`; the vector variants
+target an older API and remain outside the current single-process setup.
 
 ### Changes From the Original Paper Repo
 
-The commit `58ca7f4` is a clean fork from the orignal paper's code repo.
+The commit `58ca7f4` is a clean fork from the original paper's code repo.
 
 1. **`main_vis.py`** — removed the forced `action = 0` for the first 5
    episodes.
@@ -193,12 +201,40 @@ The commit `58ca7f4` is a clean fork from the orignal paper's code repo.
 
 3. **`utils/detection_segmentation.py`** — removed the unused
    RAM/Tag2Text import block.
-   - Reason: the RAM/Tag2Text initialization and inference code is commented
-     out, the models are not used by this paper implementation, and the
-     paper does not mention RAM/Tag2Text. The import failed because
-     `recognize-anything` is not installed.
+   - Reason: this implementation leaves the RAM/Tag2Text initialization and
+     inference blocks commented out; the paper covers DINO and Mobile-SAM.
+     The import required an unavailable package.
    - The dead paths/constants and commented code were left untouched to keep
      the diff minimal.
+
+4. **`utils/chat_utils.py`** — added optional environment-based API
+   configuration for OpenAI-compatible providers.
+   - Reads `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, and `VLN_MODEL` from the
+     environment, with the original OpenAI defaults preserved.
+   - Disables DeepSeek thinking mode automatically; otherwise reasoning
+     consumes the 100-token response budget and returns empty content.
+   - Reason: load the local DeepSeek key from the environment, keeping it out
+     of `argv` and the repository. The paper used GPT-4o; DeepSeek is a local
+     substitute, so language metrics reflect that provider.
+
+5. **`agents/system_prompt.py`, `utils/equ_ranking.py`, `utils/chat_utils.py`**
+   — the discriminator now returns plain-text `correct` or `incorrect`.
+   - `chat_with_gpt4v` has a `json_mode` flag: the generator requests JSON,
+     and the discriminator requests one word.
+   - Reason: DeepSeek sometimes used the key `correct`, which caused
+     `KeyError: 'correctness'`.
+   - The binary decision semantics remain unchanged; the response transport
+     format changed.
+
+6. **`main_vis.py`, `main_vln.py`** — added a GUI-close stop for demos.
+   - Closing the Open3D window sets a flag; the navigation loop stops at the
+     next agent step.
+   - GUI runs wait for the Open3D thread, flush logs, then exit through
+     `os._exit`, which avoids Open3D's wrong-thread shutdown panic.
+   - Reason: release the process and GPU promptly when a demo ends.
+
+7. **`demo.py`** — added an interactive launcher for mode, episode count, and model selection.
+   - Reason: simplify local GUI demos; it calls the existing entrypoints.
 
 #### Data compatibility changes
 
@@ -222,32 +258,39 @@ following data compatibility changes were made:
 - Reason: Habitat 0.2.1's episode classes reject these newer fields with
   `TypeError: ... unexpected keyword argument 'scene_dataset_config'`.
 - Goals, viewpoints, instructions, start poses, rotations, scene IDs, and
-  metrics were not changed.
+  metrics remain unchanged.
 - The extracted ObjectNav directory was renamed from `objectnav_hm3d_v1` to
   `objectgoal_hm3d` to match the repo config.
 
 #### Environment-only changes
 
-These are not source-code changes:
+These changes live in the conda environment:
 
-- `numpy==1.23.5` instead of newer NumPy because Habitat 0.2.1 uses the
-  removed `np.float` alias.
+- `numpy==1.23.5` because Habitat 0.2.1 uses the removed `np.float` alias.
 - `numpy-quaternion==2023.0.4` to stay compatible with that NumPy version.
 - `faiss-cpu==1.7.4` because `utils/mapping.py` imports `faiss`.
 - `supervision==0.21.0` because `utils/detection_segmentation.py` imports it.
 - `transformers==4.36.2` and matching tokenizers/huggingface-hub/safetensors
   because newer Transformers disables the installed PyTorch version.
-- CMake 3.25 instead of 4.x because CMake 4 fails habitat-sim's policy
-  checks.
+- CMake 3.25 because CMake 4 fails habitat-sim's policy checks.
 - GroundingDINO built with `--no-build-isolation` and the conda CUDA toolkit
   to avoid a PyTorch/CUDA mismatch.
-- MobileSAM used instead of SAM ViT-H because of the 6 GB VRAM limit.
+- MobileSAM because the 6 GB VRAM limit makes SAM ViT-H impractical.
 
 ### Current Validation Status
 
-The last check was a 5-episode GUI ObjectNav smoke run, not a benchmark:
+ObjectNav GUI smoke run: 5 episodes, 4 successes, SPL 0.235. Episode 1
+failed; episodes 2-5 succeeded. The Open3D GUI appeared and the manual query
+box worked.
 
-- 4/5 episodes succeeded
-- Final SPL 0.235
-- Episode 1 failed; episodes 2-5 succeeded
-- The Open3D GUI displayed and the manual query box worked
+DeepSeek text and vision API smoke checks passed with `deepseek-flash`. A
+6-episode language batch reached the generator/equilibrium path in all five
+new episodes; episode 5 accepted a candidate and succeeded (success 0.200,
+SPL 0.010). The batch predates the discriminator plain-text change, and a
+rerun after that change is pending.
+
+DeepSeek is a local substitute for the paper's GPT-4o provider; treat
+language metrics as smoke-test results.
+
+The GUI-close stop was tested on both entrypoints; both processes exited and
+released the GPU.

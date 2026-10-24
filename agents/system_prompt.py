@@ -36,10 +36,9 @@ Output Example:
 discriminator_prompt = """You are a discriminator agent tasked with evaluating images and maps based on a object's description. Each description specifies objects that must be visible in the images or maps. Your job is to analyze all first-view images and top-view maps for the match of the candidate objects, including their attributes and spatial relationships. If all items match the object description, it means match.
 
 - Input includes: object's description, top-view maps from point clouds, and first-view images facing the candidate. The center of the map with a red Bbox highlights the candidate object. The top-left red number on each image is the image id.
-- Your output should be a JSON object that includes "correct" if any image in the images match object's description, or "incorrect" if not. 
+- Your output must be exactly one word: "correct" if any image matches the object description, or "incorrect" if not.
+- Do not return JSON, punctuation, or an explanation.
 
 Output Example:
-{
-    "correctness": "correct",
-}
+correct
 """

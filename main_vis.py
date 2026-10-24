@@ -116,6 +116,8 @@ def main(args, send_queue, receive_queue):
         count_steps = 0
         start_ep = time.time()
         while not env.episode_over:
+            if args.gui_closed:
+                break
 
             # dd_s_time = time.time()
   
@@ -131,6 +133,10 @@ def main(args, send_queue, receive_queue):
             # dd_e_time = time.time()
             # print(' time:%.3fs\n'%(dd_e_time - dd_s_time)) 
 
+
+        if args.gui_closed:
+            print("GUI closed; stopping run.")
+            break
 
         if (
             action == 0 and 
@@ -199,19 +205,31 @@ def visualization_thread(send_queue, receive_queue):
     app.initialize()
     mono = app.add_font(gui.FontDescription(gui.FontDescription.MONOSPACE))
     app_win = ReconstructionWindow(args, mono, send_queue, receive_queue)
-    app.run()
+    try:
+        app.run()
+    finally:
+        args.gui_closed = True
 
 
 if __name__ == "__main__":
     args = get_args()
+    args.gui_closed = False
 
     send_queue = Queue()
     receive_queue = Queue()
 
-    if args.visualize:
+    gui_started = bool(args.visualize)
+    if gui_started:
         # Create a thread for the Open3D visualization
         visualization = threading.Thread(target=visualization_thread, args=(send_queue, receive_queue,))
         visualization.start()
 
     # Run ROS code in the main thread
     main(args, send_queue, receive_queue)
+
+    if gui_started:
+        visualization.join()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        logging.shutdown()
+        os._exit(0)

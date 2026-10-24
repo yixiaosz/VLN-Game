@@ -208,7 +208,7 @@ class Equilibrium_Ranking():
         for i, idx in enumerate(self.candidate_id):
             if idx in generative_idx:
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, [base64_image_list[i]])): base64_image_list[i] for _ in range(num_samples)}
+                    future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, [base64_image_list[i]]), json_mode=False): base64_image_list[i] for _ in range(num_samples)}
                     for future in concurrent.futures.as_completed(future_to_prompt):
                         prompt = future_to_prompt[future]
                         try:
@@ -220,8 +220,7 @@ class Equilibrium_Ranking():
                 probabilities[gene_idx] = 0
                 for i, response in enumerate(responses):
                     self.logger.info(response)
-                    ground_json = ast.literal_eval(response)
-                    discriminate = ground_json["correctness"] 
+                    discriminate = response.strip().lower().strip(".\"'`")
                     if discriminate == "correct":
                         probabilities[gene_idx] +=1
                     else:
@@ -234,7 +233,7 @@ class Equilibrium_Ranking():
         else:
             responses = []
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, base64_image_list)): base64_image_list for _ in range(num_samples)}
+                future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, base64_image_list), json_mode=False): base64_image_list for _ in range(num_samples)}
                 for future in concurrent.futures.as_completed(future_to_prompt):
                     prompt = future_to_prompt[future]
                     try:
@@ -244,8 +243,7 @@ class Equilibrium_Ranking():
                         print(f'{prompt} generated an exception: {exc}')
             probabilities[-1] = 0            
             for i, response in enumerate(responses):
-                ground_json = ast.literal_eval(response)
-                discriminate = ground_json["correctness"] 
+                discriminate = response.strip().lower().strip(".\"'`")
                 if discriminate == "incorrect":
                     probabilities[-1] +=1
                 else:

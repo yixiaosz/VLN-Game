@@ -1,3 +1,71 @@
+# VLN-GAME Reproduction and Probing
+
+This fork reproduces the VLN-Game algorithm for local experimentation on Habitat/HM3D. The ObjectNav pipeline is the reference check for the environment, perception, mapping, and GUI. The language-goal VLM game is the main focus.
+
+See [AGENTS.md](AGENTS.md) for the full local setup, dependency versions, data layout, and the list of compatibility changes.
+
+## Before running
+
+```bash
+source "$HOME/miniforge3/etc/profile.d/conda.sh"
+conda activate vlngame
+export GSA_PATH="$HOME/Grounded-Segment-Anything"
+cd "$HOME/VLN-Game"
+```
+
+For language-goal navigation, load the private API environment:
+
+
+```bash
+# just an example
+source "$HOME/.config/vlngame/deepseek.env"
+```
+
+## Quick launcher
+
+```bash
+python demo.py
+```
+
+The launcher prompts for ObjectNav or Language / VLM, 5/full/custom episode count, and the language model. It launches the same GUI entrypoints described below.
+
+## ObjectNav demo
+
+`main_vis.py` is the single-process ObjectNav entrypoint. Add `-v 1` to open the Open3D window; `-v 0` runs headless.
+
+| Run | Command |
+|---|---|
+| 5 episodes (episodes 1-5) | `python main_vis.py --episode_count 5 -v 1` |
+| Custom count (example: 10 episodes from #1) | `python main_vis.py --episode_count 10 -v 1` |
+| Full run (2,000 episodes) | `python main_vis.py -v 1` |
+
+Close the Open3D window to stop the run. Logs are written to `dump/logs/objectnav-dino/eval.log`. A full ObjectNav run takes days on the local GPU; use the short demos first.
+
+## Language-goal / VLM demo (main focus)
+
+`main_vln.py` parses the instruction, builds the object-centric map, proposes CLIP candidates, and runs the generator/discriminator equilibrium search. The default mode is `vlm_game`, which is the paper's game-theoretic mode. Other modes are available through `--vln_mode`.
+
+The Open3D GUI is required for candidate rendering.
+
+| Run | Command |
+|---|---|
+| 5 episodes (episodes 1-5) | `python main_vln.py --episode_count 5 -v 1` |
+| Custom count (example: 10 episodes from #1) | `python main_vln.py --episode_count 10 -v 1` |
+| Full run (316 episodes) | `python main_vln.py -v 1` |
+
+Practical notes:
+
+- Close the running Open3D window will stop the run.
+- Logs are at `dump/logs/vlobjectnav-vlm_game/eval.log`.
+- Candidate images are at `dump/vlobjectnav-vlm_game/episodes/<episode>/Vis-<id>.jpeg`.
+- The full language run covers 316 episodes and has API cost. Start with 5 episodes.
+
+---
+
+(Below this line is the original README of the [VLN-game](https://github.com/ybgdgh/VLN-Game) code)
+
+---
+
 # VLN-Game: Vision-Language Equilibrium Search for Zero-Shot Semantic Navigation
 
 [**Project Page**](https://sites.google.com/view/vln-game) |[**ArXiv**](https://arxiv.org/pdf/2411.11609) |[**Video**](https://youtu.be/YgkyYVy6tX8)
