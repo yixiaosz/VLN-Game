@@ -47,9 +47,17 @@ DEFAULT_MODELS = [
     },
 ]
 
-MODE_NAMES = {"objectnav": "ObjectNav", "llm": "Language / VLM"}
-TOTALS = {"objectnav": 2000, "llm": 316}
-LOG_DIRS = {"objectnav": "objectnav-dino", "llm": "vlobjectnav-vlm_game"}
+MODE_NAMES = {
+    "objectnav": "ObjectNav mode (reference)",
+    "clip": "Language mode: CLIP-based",
+    "llm": "Language mode: VLM",
+}
+TOTALS = {"objectnav": 2000, "clip": 316, "llm": 316}
+LOG_DIRS = {
+    "objectnav": "objectnav-dino",
+    "clip": "vlobjectnav-clip",
+    "llm": "vlobjectnav-vlm_game",
+}
 
 
 def clear_screen():
@@ -112,13 +120,16 @@ def choose_mode():
         print("=" * 34)
         print("          VLN-Game demo")
         print("=" * 34)
-        print("1) ObjectNav")
-        print("2) Language / VLM")
+        print("1) ObjectNav mode (reference)")
+        print("2) Language mode: CLIP-based")
+        print("3) Language mode: VLM")
         print("q) Quit")
         choice = input("\nSelect: ").strip().lower()
         if choice in {"1", "objectnav", "object"}:
             return "objectnav"
-        if choice in {"2", "llm", "language", "vlm"}:
+        if choice in {"2", "clip"}:
+            return "clip"
+        if choice in {"3", "llm", "vlm"}:
             return "llm"
         if choice in {"q", "quit", "exit"}:
             return None
@@ -195,7 +206,9 @@ def show_summary(mode, count, model):
 
     if count == -1:
         print()
-        print("Full runs are long and the language run has API cost.")
+        print("Full runs are long.")
+        if mode == "llm":
+            print("The VLM language run has API cost.")
         if not ask_yes_no("Continue with the full run? [y/N]: ", default_yes=False):
             return False
 
@@ -236,8 +249,13 @@ def build_launch(mode, count, model):
         env["VLN_MODEL_OPTIONS"] = json.dumps(model["options"])
         env["VLN_MODEL_SUPPORTS_TEMPERATURE"] = "1" if model["supports_temperature"] else "0"
 
-    script = "main_vis.py" if mode == "objectnav" else "main_vln.py"
-    command = [str(python), script, "-v", "1"]
+    if mode == "objectnav":
+        command = [str(python), "main_vis.py"]
+    else:
+        command = [str(python), "main_vln.py"]
+        if mode == "clip":
+            command.extend(["--vln_mode", "clip"])
+    command.extend(["-v", "1"])
     if count != -1:
         command.extend(["--episode_count", str(count)])
     return command, env

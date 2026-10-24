@@ -13,7 +13,7 @@ export GSA_PATH="$HOME/Grounded-Segment-Anything"
 cd "$HOME/VLN-Game"
 ```
 
-For language-goal navigation, load the private API environment:
+For Language mode: VLM, load the private API environment:
 
 
 ```bash
@@ -27,7 +27,7 @@ source "$HOME/.config/vlngame/api.env"
 python demo.py
 ```
 
-The launcher prompts for ObjectNav or Language / VLM, 5/full/custom episode count, and the language model. It launches the same GUI entrypoints described below. The model menu comes from `VLN_MODELS` in `api.env`, so adding or removing an entry updates the menu.
+The launcher provides ObjectNav mode (reference), Language mode: CLIP-based, and Language mode: VLM. It always opens the Open3D GUI, asks for 5/full/custom episode count in every mode, and asks for a model only in VLM mode.
 
 ## ObjectNav demo
 
@@ -39,13 +39,15 @@ The launcher prompts for ObjectNav or Language / VLM, 5/full/custom episode coun
 | Custom count (example: 10 episodes from #1) | `python main_vis.py --episode_count 10 -v 1` |
 | Full run (2,000 episodes) | `python main_vis.py -v 1` |
 
-Close the Open3D window to stop the run. Logs are written to `dump/logs/objectnav-dino/eval.log`. A full ObjectNav run takes days on the local GPU; use the short demos first.
+Close the Open3D window to stop the run. A full ObjectNav run takes days on the local GPU; use the short demos first.
 
-## Language-goal / VLM demo (main focus)
+## Language modes (main focus)
+
+For Language mode: CLIP-based, run `python main_vln.py --vln_mode clip --episode_count 5 -v 0`. This mode requires no API key and no model.
 
 `main_vln.py` parses the instruction, builds the object-centric map, proposes CLIP candidates, and runs the generator/discriminator equilibrium search. The default mode is `vlm_game`, which is the paper's game-theoretic mode. Other modes are available through `--vln_mode`.
 
-The Open3D GUI is required for candidate rendering.
+The Open3D GUI is required for VLM candidate rendering.
 
 | Run | Command |
 |---|---|
@@ -55,10 +57,8 @@ The Open3D GUI is required for candidate rendering.
 
 Practical notes:
 
-- Close the running Open3D window will stop the run.
-- Logs are at `dump/logs/vlobjectnav-vlm_game/eval.log`.
-- Candidate images are at `dump/vlobjectnav-vlm_game/episodes/<episode>/Vis-<id>.jpeg`.
-- The full language run covers 316 episodes and has API cost. Start with 5 episodes.
+- Closing the Open3D window stops the run.
+- The full VLM run covers 316 episodes and has API cost. Start with 5 episodes.
 
 ---
 

@@ -51,6 +51,19 @@ are outside scope.
     permanent source or data compatibility change, record it under
     "Changes From the Original Paper Repo" below.
 12. **Do not delete user data or tarballs** without explicit permission.
+13. **Freeze during baseline measurement.** While establishing the original
+    CLIP-only baseline, do not change program logic. The candidate-image issue
+    and structured trace are documented pending work; implement them only
+    after explicit user approval.
+14. **Preserve the original README section.** In `README.md`, everything below
+    the line `(Below this line is the original README of the [VLN-game](https://github.com/ybgdgh/VLN-Game) code)`
+    is the original paper-code README. Do not edit it.
+
+### Known Issues and Pending Work
+
+- **Candidate image integrity — pending confirmation.** The Open3D GUI has two writers for the same `Vis-<id>.jpeg` filename pattern: `on_top_rendered()` writes a full-scene 640×800 image using the frame index, while `on_image_rendered()` writes the intended 960×480 top-view plus first-view composite using the candidate ID. The agent reads `Vis-<id>.jpeg` by file existence only. Most candidate files in the last run were 640×800. Treat VLM candidate-image inputs as suspect until confirmed. Do not fix this issue unless the user explicitly asks.
+- **Structured per-episode trace — pending feature.** The full VLM inputs, prompts, generator/discriminator raw responses, policy arrays, probability arrays, selected candidates, and candidate-level rewards are not persisted in a structured trace. Do not implement this feature unless the user explicitly asks.
+- **Baseline-first policy.** The current priority is to run the original CLIP-only language mode and obtain interpretable success/SPL/DTG results. Keep program logic frozen until the baseline is reviewed.
 
 ## Local Setup
 
@@ -156,7 +169,7 @@ Do not record those credentials anywhere in the repo.
 
 ### Smoke Run Commands
 
-Interactive launcher: `python demo.py` prompts for mode, episode count, and model, then launches the GUI.
+Interactive launcher: `python demo.py` provides ObjectNav mode (reference), Language mode: CLIP-based, and Language mode: VLM. It always uses GUI mode, asks for episode count in all modes, and asks for a model only in VLM mode.
 
 ObjectNav with GUI:
 
@@ -168,7 +181,13 @@ cd "$HOME/VLN-Game"
 python main_vis.py --episode_count 5 -v 1
 ```
 
-Language-goal navigation requires an API key and the Open3D GUI. The local
+CLIP-based language baseline (no API key or model):
+
+```bash
+python main_vln.py --vln_mode clip --episode_count 5 -v 0
+```
+
+Language mode: VLM requires an API key and the Open3D GUI. The local
 provider and model configuration is stored in a private env file outside the
 repo:
 
@@ -239,9 +258,12 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
      `os._exit`, which avoids Open3D's wrong-thread shutdown panic.
    - Reason: release the process and GPU promptly when a demo ends.
 
-7. **`demo.py`** — added an interactive launcher for mode, episode count, and model selection.
-   - Reads `VLN_MODELS` from `api.env`; the model menu adapts to the list.
-   - Resolves each model's `key_env` and sets the child `VLN_*` variables.
+7. **`demo.py`** — interactive launcher for the three demo modes.
+   - ObjectNav mode (reference), Language mode: CLIP-based, and Language mode: VLM.
+   - Always requests GUI mode.
+   - Asks for episode count in all modes.
+   - Asks for a model only in VLM mode, using the dynamic `VLN_MODELS` list.
+   - CLIP mode requires no API key.
    - Reason: simplify local GUI demos; it calls the existing entrypoints.
 
 #### Data compatibility changes
@@ -285,6 +307,10 @@ These changes live in the conda environment:
   to avoid a PyTorch/CUDA mismatch.
 - MobileSAM because the 6 GB VRAM limit makes SAM ViT-H impractical.
 
+### Current Investigation
+
+The immediate goal is to run `main_vln.py --vln_mode clip` on the original code and confirm the logged success/SPL/DTG results. Paper Table III reports the CLIP-based baseline as success 0.253, SPL 0.106, DTG 4.697. Program logic remains frozen until the local baseline is reviewed.
+
 ### Current Validation Status
 
 ObjectNav GUI smoke run: 5 episodes, 4 successes, SPL 0.235. Episode 1
@@ -299,10 +325,13 @@ OpenRouter returned empty content on some attempts.
 A 6-episode DeepSeek language batch reached the generator/equilibrium path in
 all five new episodes; episode 5 accepted a candidate and succeeded (success
 0.200, SPL 0.010). The batch predates the discriminator plain-text change and
-the model registry, so a rerun is pending.
+the model registry, so a rerun is pending. Candidate-level behavior from that
+batch is suspect because the candidate-image integrity issue remains
+unresolved.
 
 Language metrics reflect the selected provider; the paper used GPT-4o.
 
 The GUI-close stop was tested on both entrypoints; both processes exited and
-released the GPU. The interactive launcher was tested with an ObjectNav
-5-episode launch and with language command construction.
+released the GPU. The interactive launcher now exposes the three demo modes;
+ObjectNav launch, CLIP command construction without an API key, and VLM model
+selection were tested. A local CLIP-only baseline run is still pending.
