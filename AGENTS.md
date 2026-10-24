@@ -293,4 +293,5 @@ DeepSeek is a local substitute for the paper's GPT-4o provider; treat
 language metrics as smoke-test results.
 
 The GUI-close stop was tested on both entrypoints; both processes exited and
-released the GPU.
+released the GPU. The interactive launcher was tested with an ObjectNav
+5-episode launch and with language command construction.
