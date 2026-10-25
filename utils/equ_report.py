@@ -144,6 +144,10 @@ def search_warnings(events):
                                         f'sum={display(checks.get("sum"))}.')
         elif kind == 'vlm_response' and event.get('status') == 'error':
             warnings.append(f'SAMPLE ERROR {event.get("sample_id")}: {display(event.get("error"))}')
+        elif kind == 'api_attempt_end' and event.get('status') in ('retry', 'failed'):
+            warnings.append(f'API {event["status"].upper()}: sample {event.get("sample_id")}, '
+                            f'attempt {event.get("attempt")}, {event.get("error_category")}, '
+                            f'HTTP={event.get("http_status")}.')
         elif kind == 'sample_parse_error':
             warnings.append(f'PARSE ERROR {event.get("sample_id")}: {display(event.get("error"))}')
         elif kind == 'sample_parsed' and event.get('recognized_verdict') is False:
@@ -197,7 +201,26 @@ def render_search(report, sid, events, warnings):
             'iterations', 'generator_samples', 'discriminator_samples', 'bias',
             'lambda_G', 'lambda_D', 'eta_G', 'eta_D') if k in parameters}))
     report.add(f'Logical samples returned/requested: G={sample_counts(events, "generator")}, '
-               f'D={sample_counts(events, "discriminator")}. HTTP retries/token usage are not counted.')
+               f'D={sample_counts(events, "discriminator")}; these are not HTTP/billing counts.')
+    attempts = [e for e in events if e.get('event') == 'api_attempt_end']
+    if attempts:
+        report.add(f'Recorded application-level API attempts: {len(attempts)}. '
+                   'SDK-internal retries and billed token usage are not captured.')
+        problematic = {e.get('sample_id') for e in attempts if e.get('status') != 'returned'}
+        if problematic:
+            report.table(['Sample', 'Attempt', 'Outcome', 'HTTP', 'Category', 'Seconds'], [
+                [e.get('sample_id'), e.get('attempt'), e.get('status'), e.get('http_status'),
+                 e.get('error_category'), e.get('elapsed_seconds')]
+                for e in attempts if e.get('sample_id') in problematic])
+            for attempt in attempts:
+                if attempt.get('status') == 'returned':
+                    continue
+                report.add(f'Attempt diagnostics: {attempt.get("sample_id")} #{attempt.get("attempt")}')
+                for key in ('content_type', 'request_id', 'body_preview', 'model_content_preview'):
+                    if key in attempt and attempt[key] is not None:
+                        report.add(f'{key}: {display(attempt[key]) if attempt[key] else "<empty>"}', 2)
+        else:
+            report.add('All recorded API attempts returned validated content; no retry/failure recorded.')
     images = [event for event in events if event.get('event') == 'image_input']
     for image in images:
         dimensions = 'x'.join(map(str, image['dimensions'])) if 'dimensions' in image else 'not decoded'
@@ -374,8 +397,12 @@ def episode_report(path):
     report.add('Display: numbers rounded to 10 significant digits; small values use scientific notation.')
     report.add('Long text wraps at 100 columns; non-ASCII/control characters are escaped. '
                'JSONL remains the exact, full-precision source. No probabilities are recalculated.')
-    report.add('Logical samples are not billed HTTP request counts; internal retries/usage are not captured.')
+    report.add('Logical samples are not billed HTTP request counts. Application attempts are shown when '
+               'available; SDK-internal retries and billed usage are not captured.')
     report.add('Manifest aggregation label: ' + display(manifest.get('discriminator_aggregation')))
+    report.add('Required-sample failure policy: ' + display(manifest.get('sample_failure_policy')))
+    if api.get('transport'):
+        report.add('API transport settings: ' + display(api['transport']))
     report.add('Candidate image protocol: ' + display(manifest.get('candidate_image_protocol')))
     report.heading('EPISODE OUTCOME')
     report.add('Environment steps: ' + display(end.get('steps')))
@@ -408,6 +435,17 @@ def episode_report(path):
     if parsing:
         report.heading('RAW INSTRUCTION-PARSING RESPONSE')
         report.add(parsing.get('raw_content'), 2)
+    parsing_attempts = [event for event in events if event.get('event') == 'api_attempt_end'
+                        and event.get('role') == 'parsing']
+    if parsing_attempts:
+        report.heading('PARSING API ATTEMPTS')
+        for attempt in parsing_attempts:
+            report.add(f'Attempt {attempt.get("attempt")}: {attempt.get("status")}; '
+                       f'category={display(attempt.get("error_category"))}; HTTP={display(attempt.get("http_status"))}')
+            if attempt.get('status') != 'returned':
+                for key in ('content_type', 'request_id', 'body_preview', 'model_content_preview'):
+                    if key in attempt and attempt[key] is not None:
+                        report.add(f'{key}: {display(attempt[key]) if attempt[key] else "<empty>"}', 2)
     for sid, search in searches.items():
         render_search(report, sid, search, per_search_warnings[sid])
     return report.text()

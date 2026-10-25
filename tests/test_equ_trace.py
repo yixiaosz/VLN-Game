@@ -55,7 +55,7 @@ class Replies:
         self.image_to_candidate = {value: key for key, value in encoded.items()}
         self.calls = []
 
-    def __call__(self, history, json_mode=True):
+    def __call__(self, history, json_mode=True, **kwargs):
         images = [item['image_url']['url'].split(',', 1)[1]
                   for item in history[-1]['content'] if item['type'] == 'image_url']
         self.calls.append((json_mode, images))
@@ -123,7 +123,7 @@ class TraceTests(unittest.TestCase):
                     error = type(exc)
         if episode:
             episode.finish('error' if error else 'completed', 140,
-                           metrics={'success': 0.0, 'spl': 0.0, 'distance_to_goal': 2.0})
+                           metrics=None if error else {'success': 0.0, 'spl': 0.0, 'distance_to_goal': 2.0})
             # Reject non-standard JSON numbers, rather than accepting bare NaN.
             events = [json.loads(line, parse_constant=lambda s: self.fail(s))
                       for line in episode.path.read_text().splitlines()]
@@ -250,13 +250,11 @@ class TraceTests(unittest.TestCase):
             {15: ['correct'] * 5,
              51: [RuntimeError('mock failure')] + ['incorrect'] * 4,
              -1: ['incorrect'] * 5})
-        self.assertIsNone(error)
-        score = next(e for e in events if e['event'] == 'discriminator_candidate_score' and e['candidate_id'] == 51)
-        self.assertEqual(score['correct_count_used'], 0)
-        self.assertEqual(score['denominator_used'], 5)
-        self.assertEqual(len(score['new_sample_ids']), 4)
-        self.assertEqual(score['new_sample_ids'], score['sample_pool_ids_used_by_current_code'])
-        self.assertTrue(all(s.startswith('d-51-') for s in score['new_sample_ids']))
+        self.assertEqual(error, chat.APIRequestError)
+        self.assertFalse(any(e['event'] == 'discriminator_candidate_score' and e['candidate_id'] == 51 for e in events))
+        self.assertFalse(any(e['event'] == 'discriminator_aggregate' for e in events))
+        self.assertFalse(any(e['event'] == 'policy_snapshot' for e in events))
+        self.assertEqual(next(e for e in events if e['event'] == 'search_end')['status'], 'error')
 
     def test_all_reject_skips_policies(self):
         result, _, _, calls, events, _ = self.compare([15], [-1] * 5, {})
@@ -267,17 +265,24 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(end['status'], 'early_reject')
         self.assertEqual(end['equilibrium_updates_completed'], 0)
 
-    def test_failed_samples_keep_reference_denominators(self):
+    def test_failed_generator_sample_aborts_without_partial_aggregation(self):
         _, _, _, _, events, _ = self.compare(
             [15], [15, 15, RuntimeError('mock failure'), 15, -1],
             {15: ['correct', RuntimeError('mock failure'), 'incorrect', 'correct', RuntimeError('mock failure')]})
-        gen = next(e for e in events if e['event'] == 'generator_aggregate')
-        disc = next(e for e in events if e['event'] == 'discriminator_aggregate')
-        self.assertEqual(gen['denominator_used'], 4)
-        self.assertEqual(disc['denominator_used'], 5)
-        self.assertEqual(disc['counts_used']['0'], 2)
+        self.assertFalse(any(e['event'] in ('generator_aggregate', 'discriminator_aggregate', 'policy_snapshot') for e in events))
         errors = [e for e in events if e['event'] == 'vlm_response' and e['status'] == 'error']
-        self.assertEqual(len(errors), 3)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(next(e for e in events if e['event'] == 'search_end')['status'], 'error')
+
+    def test_failed_discriminator_sample_aborts_without_partial_scoring(self):
+        result, error, _, _, events, _ = self.compare(
+            [15], [15] * 5,
+            {15: ['correct', RuntimeError('mock failure'), 'incorrect', 'correct', RuntimeError('mock failure')]})
+        self.assertIsNone(result)
+        self.assertEqual(error, chat.APIRequestError)
+        self.assertTrue(any(e['event'] == 'generator_aggregate' for e in events))
+        self.assertFalse(any(e['event'] in ('discriminator_aggregate', 'policy_snapshot') for e in events))
+        self.assertIsNone(next(e for e in events if e['event'] == 'episode_end')['metrics'])
 
     def test_invalid_generator_response_is_archived_and_raises(self):
         _, error, _, _, events, _ = self.compare([15], ['not JSON'] * 5, {})

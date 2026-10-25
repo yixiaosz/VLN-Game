@@ -3,13 +3,24 @@ import torch
 import torch.nn.functional as F
 import ast
 import concurrent.futures
+from contextlib import contextmanager
+from functools import partial
+import threading
 from collections import Counter
-from utils.chat_utils import chat_with_gpt, chat_with_gpt4v
+from utils.chat_utils import chat_with_gpt, chat_with_gpt4v, APIRequestError
 from agents.system_prompt import (
     Parsing_prompt,
     discriminator_prompt,
     generator_prompt
     )
+
+@contextmanager
+def _stop_retries_on_exit(event):
+    try:
+        yield
+    finally:
+        # Runs before executor shutdown, including on KeyboardInterrupt.
+        event.set()
 
 
 class Equilibrium_Ranking():
@@ -37,13 +48,19 @@ class Equilibrium_Ranking():
         message = []
         message.append({"role": "system", "content": Parsing_prompt})
         message.append({"role": "user", "content": self.text_description})
-        self.response_message = chat_with_gpt(message)
+        observer = partial(episode_trace.emit, sample_id='parsing') if episode_trace is not None else None
+        self.response_message = chat_with_gpt(message, attempt_observer=observer)
         if episode_trace is not None:
             episode_trace.emit('parsing_response', raw_content=self.response_message,
                                prompt_ref='run.json#/prompts/parsing')
         
         if logger != None:
             self.logger = logger
+
+    def _attempt_observer(self, sample_id, **context):
+        if self.trace is not None:
+            return partial(self.trace.emit, sample_id=sample_id, **context)
+        return None
         
     def equilibrium_search(self, base64_image_list, candidate_id, trace=None):
         self.trace = trace
@@ -208,11 +225,15 @@ class Equilibrium_Ranking():
         id_list = []
         responses = []
         response_ids = []
+        cancel = threading.Event()
+        batch_error = None
         if self.trace is not None:
             self.trace.emit('query_batch', role='generator', requested_samples=num_samples,
                             input_positions=list(range(len(self.candidate_id))))
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_to_message = {executor.submit(chat_with_gpt4v, chat_history): (chat_history, f'g-{n + 1}') for n in range(num_samples)}
+        with concurrent.futures.ThreadPoolExecutor() as executor, _stop_retries_on_exit(cancel):
+            future_to_message = {executor.submit(chat_with_gpt4v, chat_history,
+                                  attempt_observer=self._attempt_observer(f'g-{n + 1}'),
+                                  cancel_event=cancel): (chat_history, f'g-{n + 1}') for n in range(num_samples)}
             for completion_order, future in enumerate(concurrent.futures.as_completed(future_to_message), 1):
                 prompt, sample_id = future_to_message[future]
                 try:
@@ -220,16 +241,21 @@ class Equilibrium_Ranking():
                     responses.append(response)
                     response_ids.append(sample_id)
                 except Exception as exc:
+                    batch_error = batch_error or exc
+                    cancel.set()
                     if self.trace is not None:
                         self.trace.emit('vlm_response', role='generator', sample_id=sample_id,
                                         completion_order=completion_order, status='error',
                                         error={'type': type(exc).__name__, 'message': str(exc)})
-                    print(f'{prompt} generated an exception: {exc}')
+                    print(f'Generator sample {sample_id} failed: {exc}')
                 else:
                     if self.trace is not None:
                         self.trace.emit('vlm_response', role='generator', sample_id=sample_id,
                                         completion_order=completion_order, raw_content=response,
                                         status='returned')
+
+        if batch_error is not None:
+            raise APIRequestError(f'Generator batch failed; no partial aggregation: {batch_error}') from None
 
         for i, response in enumerate(responses):
             if self.trace is None:
@@ -285,12 +311,16 @@ class Equilibrium_Ranking():
                 responses = []
                 response_ids = []
                 new_sample_ids = []
+                cancel = threading.Event()
+                batch_error = None
                 input_position = i
                 if self.trace is not None:
                     self.trace.emit('query_batch', role='discriminator', candidate_id=idx,
                                     requested_samples=num_samples, input_positions=[i])
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, [base64_image_list[i]]), json_mode=False): (base64_image_list[i], f'd-{idx}-{n + 1}') for n in range(num_samples)}
+                with concurrent.futures.ThreadPoolExecutor() as executor, _stop_retries_on_exit(cancel):
+                    future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, [base64_image_list[i]]), json_mode=False,
+                                          attempt_observer=self._attempt_observer(f'd-{idx}-{n + 1}', candidate_id=idx, input_positions=[i]),
+                                          cancel_event=cancel): (base64_image_list[i], f'd-{idx}-{n + 1}') for n in range(num_samples)}
                     for completion_order, future in enumerate(concurrent.futures.as_completed(future_to_prompt), 1):
                         prompt, sample_id = future_to_prompt[future]
                         try:
@@ -299,17 +329,22 @@ class Equilibrium_Ranking():
                             response_ids.append(sample_id)
                             new_sample_ids.append(sample_id)
                         except Exception as exc:
+                            batch_error = batch_error or exc
+                            cancel.set()
                             if self.trace is not None:
                                 self.trace.emit('vlm_response', role='discriminator', candidate_id=idx,
                                                 sample_id=sample_id, completion_order=completion_order,
                                                 status='error', error={'type': type(exc).__name__, 'message': str(exc)})
-                            print(f'{prompt} generated an exception: {exc}')
+                            print(f'Discriminator sample {sample_id} failed: {exc}')
                         else:
                             if self.trace is not None:
                                 self.trace.emit('vlm_response', role='discriminator', candidate_id=idx,
                                                 sample_id=sample_id, completion_order=completion_order,
                                                 input_positions=[input_position], raw_content=response,
                                                 status='returned')
+
+                if batch_error is not None:
+                    raise APIRequestError(f'Discriminator batch for candidate {idx} failed; no partial aggregation: {batch_error}') from None
                             
                 probabilities[gene_idx] = 0
                 for i, response in enumerate(responses):
@@ -343,12 +378,16 @@ class Equilibrium_Ranking():
         else:
             responses = []
             reject_sample_ids = []
+            cancel = threading.Event()
+            batch_error = None
             if self.trace is not None:
                 self.trace.emit('query_batch', role='discriminator', candidate_id=-1,
                                 scope='all_input_images', requested_samples=num_samples,
                                 input_positions=list(range(len(base64_image_list))))
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, base64_image_list), json_mode=False): (base64_image_list, f'd-reject-{n + 1}') for n in range(num_samples)}
+            with concurrent.futures.ThreadPoolExecutor() as executor, _stop_retries_on_exit(cancel):
+                future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, base64_image_list), json_mode=False,
+                                      attempt_observer=self._attempt_observer(f'd-reject-{n + 1}', candidate_id=-1),
+                                      cancel_event=cancel): (base64_image_list, f'd-reject-{n + 1}') for n in range(num_samples)}
                 for completion_order, future in enumerate(concurrent.futures.as_completed(future_to_prompt), 1):
                     prompt, sample_id = future_to_prompt[future]
                     try:
@@ -356,17 +395,21 @@ class Equilibrium_Ranking():
                         responses.append(response)
                         reject_sample_ids.append(sample_id)
                     except Exception as exc:
+                        batch_error = batch_error or exc
+                        cancel.set()
                         if self.trace is not None:
                             self.trace.emit('vlm_response', role='discriminator', candidate_id=-1,
                                             sample_id=sample_id, completion_order=completion_order,
                                             status='error', error={'type': type(exc).__name__, 'message': str(exc)})
-                        print(f'{prompt} generated an exception: {exc}')
+                        print(f'Discriminator reject-all sample {sample_id} failed: {exc}')
                     else:
                         if self.trace is not None:
                             self.trace.emit('vlm_response', role='discriminator', candidate_id=-1,
                                             scope='all_input_images', sample_id=sample_id,
                                             completion_order=completion_order, raw_content=response,
                                             status='returned')
+            if batch_error is not None:
+                raise APIRequestError(f'Discriminator reject-all batch failed; no partial aggregation: {batch_error}') from None
             probabilities[-1] = 0            
             for i, response in enumerate(responses):
                 discriminate = response.strip().lower().strip(".\"'`")

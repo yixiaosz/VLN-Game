@@ -95,10 +95,10 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn('125 (25%)', report)
 
     def test_failed_samples_show_actual_denominators_and_raw_errors(self):
-        _, _, report = self.search(
-            [15], [15, 15, RuntimeError('generator failure'), 15, -1],
-            {15: ['correct', RuntimeError('discriminator failure'), 'incorrect',
-                  'correct', RuntimeError('discriminator failure')]})
+        path = self.root / 'equilibrium.jsonl'
+        fixture = Path(__file__).parent / 'fixtures' / 'legacy_failed_samples.jsonl'
+        path.write_bytes(fixture.read_bytes())
+        report = episode_report(path)
         self.assertIn('G=4/5, D=3/5', report)
         self.assertIn('Actual denominator: 4', report)
         self.assertIn('Correct count used: 2 / denominator 5', report)

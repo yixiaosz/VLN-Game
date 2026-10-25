@@ -148,11 +148,17 @@ def main(args, send_queue, receive_queue, candidate_images=None):
             except CandidateRenderCancelled:
                 args.gui_closed = True
                 break
+            except KeyboardInterrupt:
+                if episode_trace is not None:
+                    episode_trace.finish('interrupted', count_steps)
+                if candidate_images is not None:
+                    candidate_images.request_gui_close()
+                raise
             except Exception as exc:
                 if episode_trace is not None:
                     episode_trace.finish('error', count_steps,
                                          error={'type': type(exc).__name__, 'message': str(exc)})
-                if isinstance(exc, CandidateRenderError) and candidate_images is not None:
+                if candidate_images is not None:
                     candidate_images.request_gui_close()
                 raise
 
@@ -271,9 +277,15 @@ if __name__ == "__main__":
     exit_code = 0
     try:
         main(args, send_queue, receive_queue, candidate_images)
-    except CandidateRenderError:
-        logging.exception('Candidate image rendering failed; test stopped without completing the episode')
+    except KeyboardInterrupt:
+        if candidate_images is None:
+            raise
         candidate_images.request_gui_close()
+        exit_code = 130
+    except Exception:
+        logging.exception('Test stopped on error; incomplete episode was not counted')
+        if candidate_images is not None:
+            candidate_images.request_gui_close()
         exit_code = 1
 
     if gui_started:

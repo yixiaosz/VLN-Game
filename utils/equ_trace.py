@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
+import threading
 
 import numpy as np
 from PIL import Image
@@ -75,7 +76,8 @@ class EquilibriumTraceRun:
                         source=source_identity(),
                         discriminator_aggregation='candidate_local_responses_v1',
                         nonfinite_encoding='NaN, Infinity, -Infinity are JSON strings',
-                        response_scope='Final logical sample returns/errors; internal HTTP retries are not individually recorded')
+                        response_scope='Logical sample returns/errors and application-level API attempts; SDK-internal retries and billed token usage are not individually captured',
+                        sample_failure_policy='abort_test_no_partial_batch')
         with (self.root / 'run.json').open('x') as stream:
             json.dump(json_value(manifest), stream, indent=2, allow_nan=False)
         logger.info('Equilibrium trace run: %s', self.root)
@@ -92,6 +94,7 @@ class EpisodeTrace:
         self.directory.mkdir(parents=True)
         self.path = self.directory / 'equilibrium.jsonl'
         self.stream = self.path.open('x')
+        self._write_lock = threading.Lock()
         self.search_count = 0
         self.equilibrium_runs = 0
         self.current_search = None
@@ -102,8 +105,9 @@ class EpisodeTrace:
     def emit(self, event, **fields):
         record = dict(event=event, timestamp_utc=datetime.now(timezone.utc).isoformat(),
                       run_id=self.run.run_id, episode_number=self.number, **fields)
-        self.stream.write(json.dumps(json_value(record), allow_nan=False) + '\n')
-        self.stream.flush()
+        with self._write_lock:
+            self.stream.write(json.dumps(json_value(record), allow_nan=False) + '\n')
+            self.stream.flush()
 
     def start_search(self, agent_step, candidate_ids):
         self.search_count += 1

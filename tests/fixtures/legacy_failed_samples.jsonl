@@ -1,0 +1,18 @@
+{"event":"episode_start","episode_number":1,"run_id":"synthetic-legacy-partial","instruction":"Synthetic legacy partial-batch example; policy snapshots omitted. Not a navigation run."}
+{"event":"search_start","episode_number":1,"search_id":1,"agent_step":80,"candidate_order":[15]}
+{"event":"query_batch","search_id":1,"role":"generator","requested_samples":5,"input_positions":[0]}
+{"event":"vlm_response","search_id":1,"role":"generator","sample_id":"g-1","completion_order":1,"status":"returned","raw_content":"{\"object_id\":\"15\"}"}
+{"event":"vlm_response","search_id":1,"role":"generator","sample_id":"g-2","completion_order":2,"status":"returned","raw_content":"{\"object_id\":\"15\"}"}
+{"event":"vlm_response","search_id":1,"role":"generator","sample_id":"g-3","completion_order":3,"status":"returned","raw_content":"{\"object_id\":\"15\"}"}
+{"event":"vlm_response","search_id":1,"role":"generator","sample_id":"g-4","completion_order":4,"status":"returned","raw_content":"{\"object_id\":\"-1\"}"}
+{"event":"vlm_response","search_id":1,"role":"generator","sample_id":"g-5","completion_order":5,"status":"error","error":{"type":"RuntimeError","message":"generator failure"}}
+{"event":"generator_aggregate","search_id":1,"denominator_used":4,"counts":{"15":3,"-1":1},"p_vlm_all_candidates":{"15":0.75,"-1":0.25},"p_vlm_observed":{"15":0.75,"-1":0.25},"policy_candidate_order":[15,-1],"p_vlm_correct":[0.75,0.25],"p_vlm_incorrect":[0.25,0.75]}
+{"event":"query_batch","search_id":1,"role":"discriminator","candidate_id":15,"requested_samples":5,"input_positions":[0]}
+{"event":"vlm_response","search_id":1,"role":"discriminator","candidate_id":15,"sample_id":"d-15-1","completion_order":1,"status":"returned","raw_content":"correct"}
+{"event":"vlm_response","search_id":1,"role":"discriminator","candidate_id":15,"sample_id":"d-15-2","completion_order":2,"status":"returned","raw_content":"incorrect"}
+{"event":"vlm_response","search_id":1,"role":"discriminator","candidate_id":15,"sample_id":"d-15-3","completion_order":3,"status":"returned","raw_content":"correct"}
+{"event":"vlm_response","search_id":1,"role":"discriminator","candidate_id":15,"sample_id":"d-15-4","completion_order":4,"status":"error","error":{"type":"RuntimeError","message":"discriminator failure"}}
+{"event":"vlm_response","search_id":1,"role":"discriminator","candidate_id":15,"sample_id":"d-15-5","completion_order":5,"status":"error","error":{"type":"RuntimeError","message":"discriminator failure"}}
+{"event":"discriminator_candidate_score","search_id":1,"candidate_id":15,"internal_key":0,"new_sample_ids":["d-15-1","d-15-2","d-15-3"],"sample_pool_ids_used_by_current_code":["d-15-1","d-15-2","d-15-3"],"correct_count_used":2,"denominator_used":5}
+{"event":"search_end","search_id":1,"status":"completed","selected_candidate_id":15,"selected_policy_index":0,"equilibrium_updates_completed":500}
+{"event":"episode_end","episode_number":1,"status":"completed","steps":0,"search_invocations":1,"equilibrium_runs":1,"metrics":null}

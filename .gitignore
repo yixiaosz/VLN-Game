@@ -17,6 +17,7 @@ test*
 !tests/test_equ_report.py
 !tests/test_candidate_images.py
 !tests/test_vis.py
+!tests/test_chat_utils.py
 saved_pcd
 create*
 visualize*

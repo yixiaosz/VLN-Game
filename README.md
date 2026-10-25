@@ -115,6 +115,34 @@ label APIs, preserving the previous pixels/styles while eliminating the repeated
 `BoxAnnotator.annotate` deprecation warning. This is a separate visualization
 compatibility change; Supervision remains pinned to the installed 0.21.0 setup.
 
+### API reliability
+
+Supported parsing/Generator/Discriminator calls keep the existing OpenAI SDK and
+Requests clients, with explicit 10-second connection and 90-second read-inactivity
+timeouts. A shared, finite loop allows at most three application attempts, with
+2/4-second retry delays and Retry-After capped at 30 seconds. Transient HTTP,
+connection, decoding, and existing model-syntax validation failures consume this
+budget; permanent request/authentication/configuration errors fail immediately.
+
+HTTP status and response structure are checked before content extraction. Trace
+events `api_attempt_start` / `api_attempt_end` link retries to logical sample IDs
+and retain status, Content-Type, request ID, elapsed time, failure category, and
+bounded sanitized failure previews. Authorization headers/keys and request-image
+base64 are not logged. Terminal reports include retry/failure diagnostics.
+
+If a required sample ultimately fails, the test stops with an explicit API error:
+the affected episode is incomplete, not counted as a navigation failure, and no
+partial-batch frequency is calculated. Previously completed episodes remain saved.
+This is labelled `abort_test_no_partial_batch` in the manifest; old archives keep
+their actual Generator/Discriminator denominator behavior. Complete batches still
+use five logical samples and the same prompts, payload settings, and equations.
+
+These are connection/read timeouts, **not a strict wall-clock deadline** against
+a server continuously sending bytes. Interrupts stop peer retry loops before
+executor shutdown, but cannot forcibly cancel an active HTTP thread. SDK-internal
+connection retries are not individually traced. This is intentionally a focused
+reliability patch rather than a new asynchronous transport/cancellation framework.
+
 ### VLM-Game trace archive
 
 Single-process `main_vln.py --vln_mode vlm_game` runs automatically create a
@@ -153,8 +181,8 @@ separately; new candidate-local pools match their candidate's returned samples.
 Historical traces retain their accumulated pools and numerical anomalies.
 Nonfinite numerical values are represented by the JSON strings
 `"NaN"`, `"Infinity"`, and `"-Infinity"`, with policy diagnostics; no values are
-clamped or repaired. The five logical samples are traced, but internal HTTP
-retry attempts and billed token usage are not individually captured. CLIP,
+clamped or repaired. Application-level API attempts are now traced separately
+from logical samples; SDK-internal retries and billed token usage are not captured. CLIP,
 Generator-only, and Ranking modes retain their existing logging.
 
 #### Terminal-readable episode reports

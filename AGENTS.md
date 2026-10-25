@@ -62,29 +62,32 @@ are outside scope.
     hold and approved the Discriminator correction on 2026-10-25, before a
     completed 100-episode GPT-4o reference test. New runs use candidate-local
     response batches, labelled `candidate_local_responses_v1`. Preserve old
-    uncorrected archives and their labels. Failed-query denominator handling,
-    invalid-response handling, and numerical clamping are separate decisions;
-    do not silently change them or rewrite historical trace values.
+    uncorrected archives and their labels. The later API reliability change
+    (entry 14) stops a test after a required sample fails rather than producing
+    partial-batch frequencies. Preserve historical failed-sample denominators;
+    unrecognized verdict handling and numerical clamping remain separate decisions.
 
 ### Known Issues and Pending Work
 
 - **Candidate image integrity — user-approved correction (2026-10-25).** The old shared `Vis-<id>.jpeg` writers and existence-only reader sent unintended full-scene/stale inputs to the VLM; the uncorrected trace smoke run confirmed 15/19 input buffers were 640x800. Supported single-process VLM modes now use separate ordinary-frame paths, run/episode/search/candidate-specific composite paths, atomic publication, and explicit completion with identity/first-view/hash/format validation before API calls. Old files/archives remain untouched. See change entry 11 and the local README candidate-delivery section. New runs are image-corrected / Discriminator-corrected after change 12; retain the original labels of older archives.
-- **Structured per-episode trace — user-approved implementation (2026-10-25).** Single-process `vlm_game` runs archive exact input-image buffers and per-episode JSONL events under a unique `logs/<experiment>/traces/<run-id>/` directory. The trace records prompts/configuration, logical sample returns/errors, actual aggregation pools and denominators, initial and checkpoint policies, decisions, and episode metrics. New runs identify candidate-local Discriminator aggregation; historical traces retain their actual legacy calculations and numerical anomalies. Internal HTTP retries, billed token usage, and hypothetical candidate-level navigation rewards are not recorded. See the local README trace-archive section and the change entries below.
-- **API decoding/timeouts — reliability gaps, not yet fixed (2026-10-25).**
+- **Structured per-episode trace — user-approved implementation (2026-10-25).** Single-process `vlm_game` runs archive exact input-image buffers and per-episode JSONL events under a unique `logs/<experiment>/traces/<run-id>/` directory. The trace records prompts/configuration, logical sample returns/errors, actual aggregation pools and denominators, initial and checkpoint policies, decisions, and episode metrics. New runs identify candidate-local Discriminator aggregation; historical traces retain their actual legacy calculations and numerical anomalies. Entry 14 adds application-level API attempt diagnostics; SDK-internal retries, billed token usage, and hypothetical candidate-level navigation rewards are not recorded. See the local README trace-archive section and the change entries below.
+- **API decoding/timeouts — historical failure and reliability correction.**
   The corrected GPT-4o-mini run completed 20/100 episodes, then stalled during
   episode 21/search 8 awaiting Discriminator sample `d-36-5`. Two earlier
   `JSONDecodeError` events (episode 7/search 5 Generator; episode 21/search 1
   Discriminator) came from decoding the outer HTTP response, not the model's
   `object_id` text. HTTP status/body diagnostics were not captured, so the exact
-  upstream cause cannot be recovered. `requests.post` has no timeout or status
-  check; its exception handler catches `OpenAIError` rather than Requests errors,
-  and malformed Generator content does not consume the retry budget. Correct
-  transport handling and bounded attempts are pending work; failed-sample
-  denominator policy remains a separate decision. The lingering process was
+  upstream cause cannot be recovered. At that revision, `requests.post` had no
+  timeout/status check, caught the wrong exception family, and malformed Generator
+  content did not consume the retry budget. Entry 14 now adds connect/read timeouts,
+  bounded application attempts, response checks, and diagnostics. It preserves
+  the existing Requests/OpenAI SDK clients; it does not impose an absolute
+  wall-clock deadline against continuously arriving bytes. The lingering process was
   stopped before verified archival under `saved_sessions/`; that directory also
   contains the old 38-episode VLM run and full CLIP baseline. See its README and
   the stopped mini session's `API-error-investigation.txt`. No API behavior was
-  changed by that archival/investigation task.
+  changed by that archival/investigation task; the subsequent reliability fix is
+  separately documented below.
 - **Baseline-first policy.** The current priority is to run the original CLIP-only language mode and obtain interpretable success/SPL/DTG results. Keep program logic frozen until the baseline is reviewed.
 
 #### Discriminator response accumulation — approved algorithmic correction
@@ -151,6 +154,8 @@ values would not correct the cross-candidate contamination.
 The five-sample protocol, prompts, bias, equilibrium equations, candidate mapping,
 single-candidate complement, multi-candidate reject-all query, fixed-five
 Discriminator denominator, and invalid-response handling are otherwise preserved.
+The later transport fix aborts on a required sample error before any partial-batch
+frequency is produced; it does not change these successful-batch formulas.
 No clamping is added. Tests cover two/three candidates, candidate-order independence
 of mapped frequencies, single-candidate and all-reject branches, failed samples,
 and finite/nonnegative/normalized initial and checkpoint policies. Reports retain
@@ -500,6 +505,55 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
       VLM-input, or navigation algorithm change.
     - The combined GPT-4o-mini GUI smoke test processed 865 frame updates with
       zero `BoxAnnotator` / `ColorPalette.default()` deprecation warnings.
+
+14. **`utils/chat_utils.py`, `utils/equ_ranking.py`, `utils/equ_trace.py`,
+    `utils/equ_report.py`, `main_vln.py`** — API reliability correction, deliberately
+    retaining the existing Requests and OpenAI SDK clients.
+    - Configure connect/read-inactivity timeouts of 10/90 seconds on supported
+      parsing and vision requests. Use at most three application attempts with
+      2/4-second backoff and capped Retry-After handling (30 seconds). Malformed
+      model syntax/empty content and outer-response errors consume the budget;
+      permanent HTTP/configuration/SDK-authentication errors fail without retries.
+    - Check HTTP status and choices/message/content structure before extraction.
+      Record per-attempt role/sample identity, elapsed time, HTTP status, content
+      type, request ID, failure category, and bounded sanitized previews. Never
+      record authorization headers or keys. Attempt callbacks use serialized
+      JSONL writes; terminal reports expose the diagnostics too.
+    - Adopt the recommended `abort_test_no_partial_batch` failure policy: after
+      a required sample error, do not produce an aggregate or navigation result
+      from a partial batch. The affected episode is marked error/incomplete;
+      completed episode results remain intact. Peer calls skip further retries
+      after a batch failure/interrupt; current HTTP calls still rely on their
+      socket timeouts. Error/interrupt cleanup requests GUI closure.
+    - This is not an async transport rewrite, a hard wall-clock deadline, or
+      forcible cancellation of in-flight threads. A server trickling bytes can
+      extend a read timeout; the SDK can also perform internal connection retries.
+      Logs therefore count application attempts, not all billed HTTP requests.
+      The legacy unused local-Llama helper remains outside this supported path.
+    - Prompts, images, model options, output caps, temperatures, five logical
+      samples, and equilibrium calculations for complete batches are preserved.
+      Historical partial-batch/NaN traces and their denominators are not rewritten.
+    - Validation (2026-10-26): all 61 offline tests passed, including a local
+      stalled HTTP server, retry exhaustion, permanent errors, sanitized diagnostics,
+      interrupt cleanup, and exclusion of incomplete episodes from metrics. A
+      synthetic fatal-error GUI probe exhausted three empty-response attempts for
+      one required sample: no aggregate, policy, or episode metrics were produced,
+      and the GUI closed automatically.
+    - A three-episode GPT-4o-mini GUI smoke run completed in 8m42s with one
+      deliberately injected empty HTTP 200 response. Its retry succeeded and
+      contributed exactly one logical vote; the Generator denominator remained
+      five. The run recorded six searches, 11 validated 960x480 inputs, 55 logical
+      vision returns, 15 policy snapshots, and 59 application attempts (three
+      parsing and 56 vision, including the injected failure). One search
+      discriminated two candidates. Independent audits matched ordered API image
+      hashes, candidate-local scoring pools, and replayed policy checkpoints.
+      All 11 candidate renders completed across 610 frame updates; shutdown was
+      clean, with no thread failures or matching new kernel crash records, and
+      the GPU was released. Success was 1/3, SPL 0.089, DTG 3.415; this short,
+      fault-injected run validates reliability rather than benchmark performance.
+      Persistent artifacts, source snapshots, and validation reports are under
+      `saved_sessions/smoke_tests/20261026-http-timeout-mini-smoke/` and
+      `saved_sessions/smoke_tests/20261026-http-timeout-fatal-gui-check/`.
 
 #### Data compatibility changes
 
