@@ -77,6 +77,7 @@ class VLObjectNav_Agent(ObjectNav_Agent):
         self.candidate_num = 0
         self.candidate_objects = []
         self.image_list = []
+        self.episode_trace = None
         
 
     def reset(self) -> None:
@@ -84,6 +85,7 @@ class VLObjectNav_Agent(ObjectNav_Agent):
         self.candidate_num = 0
         self.candidate_objects = []
         self.image_list = []
+        self.episode_trace = None
         
 
         # ------------------------------------------------------------------
@@ -108,10 +110,13 @@ class VLObjectNav_Agent(ObjectNav_Agent):
                 self.classes = [self.text_queries]
             elif 'vlm' in self.args.vln_mode :
                 self.all_objects = []
-                self.equ_ranking = Equilibrium_Ranking(self.text_queries, self.logger)
+                self.equ_ranking = Equilibrium_Ranking(self.text_queries, self.logger,
+                                                       episode_trace=self.episode_trace)
                 response_message = self.equ_ranking.response_message
 
                 ground_json = ast.literal_eval(response_message)
+                if self.episode_trace is not None:
+                    self.episode_trace.emit('instruction_parsed', parsed_instruction=ground_json)
                 self.target_data = ground_json["target"]
                 self.all_objects.append(self.target_data)
                 if "landmark" in ground_json:
@@ -350,6 +355,10 @@ class VLObjectNav_Agent(ObjectNav_Agent):
         
             
             if len(self.candidate_objects) == 0 and len(candidate_target) > 0 and (self.l_step+1) % cfg.filter_interval == 0 and len(total_candidate_objects) != self.candidate_num and 'vlm' in self.args.vln_mode :
+
+                search_trace = None
+                if self.episode_trace is not None:
+                    search_trace = self.episode_trace.start_search(self.l_step + 1, candidate_id)
                 
                 candidate_image_list = []
                 for id in candidate_id:
@@ -370,14 +379,15 @@ class VLObjectNav_Agent(ObjectNav_Agent):
                                 ) 
                 
                 base64_image_list = []
-                for id in candidate_id:
+                for input_position, id in enumerate(candidate_id):
                     dump_dir = "{}/{}/episodes".format(self.args.dump_location, self.args.exp_name)
                     image_filename = '{}/{}/Vis-{}.jpeg'.format(dump_dir, self.episode_n, id)
                     while True:
                         if os.path.exists(image_filename) and os.path.getsize(image_filename) > 0:
                             try:
                                 with open(image_filename, "rb") as image_file:
-                                    base64_image_list.append(base64.b64encode(image_file.read()).decode("utf-8"))
+                                    image_bytes = image_file.read()
+                                    base64_image_list.append(base64.b64encode(image_bytes).decode("utf-8"))
                                     print("get image " + str(id) + " in " + str(candidate_id))
                                     break
                             except Exception as e:
@@ -385,13 +395,18 @@ class VLObjectNav_Agent(ObjectNav_Agent):
                         else:
                             time.sleep(0.1)
                             print("Waiting for the generation.")
+
+                    if search_trace is not None:
+                        # Archive the same buffer encoded above, never re-read the GUI file.
+                        search_trace.archive_image(id, input_position, image_filename, image_bytes)
                                             
                 if self.args.vln_mode == "vlm":
                     candidate_index = self.equ_ranking.generator_search(base64_image_list, candidate_id)
                 elif self.args.vln_mode == "vlm_rank":
                     candidate_index = self.equ_ranking.generator_search(base64_image_list, candidate_id, 5)
                 elif self.args.vln_mode == "vlm_game":
-                    candidate_index = self.equ_ranking.equilibrium_search(base64_image_list, candidate_id)
+                    candidate_index = self.equ_ranking.equilibrium_search(base64_image_list, candidate_id,
+                                                                         trace=search_trace)
 
                 if candidate_index == -1 : # -1: not sure
                     print("reject all candidates")

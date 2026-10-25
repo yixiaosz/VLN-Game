@@ -29,6 +29,9 @@ from utils.task import VLObjectNavEpisode
 from utils.vis_gui import ReconstructionWindow
 from agents.vlnav_agent_vlm import VLObjectNav_Agent
 from habitat.utils.visualizations import maps
+from utils.equ_trace import EquilibriumTraceRun
+from utils.chat_utils import trace_configuration
+from agents.system_prompt import Parsing_prompt, generator_prompt, discriminator_prompt
 
 
 def draw_top_down_map(info, output_size):
@@ -86,6 +89,16 @@ def main(args, send_queue, receive_queue):
         num_episodes = min(args.episode_count, len(env.episodes))
     print("num_episodes: ", num_episodes)
 
+    trace_run = None
+    if args.vln_mode == 'vlm_game':
+        trace_run = EquilibriumTraceRun(
+            log_dir, {'mode': args.vln_mode, 'requested_episodes': num_episodes,
+                      'config_seed': config.SEED, 'argument_seed': args.seed,
+                      'visualize': args.visualize, 'task_config': str(config),
+                      'api_configuration': trace_configuration()},
+            {'parsing': Parsing_prompt, 'generator': generator_prompt,
+             'discriminator': discriminator_prompt}, logging)
+
     fail_case = {}
     fail_case['collision'] = 0
     fail_case['success'] = 0
@@ -99,6 +112,12 @@ def main(args, send_queue, receive_queue):
         obs = env.reset()
         
         agent.reset()
+        episode_trace = None
+        if trace_run is not None:
+            episode_trace = trace_run.start_episode(
+                count_episodes + 1, env.current_episode.episode_id,
+                env.current_episode.scene_id, obs['instruction']['text'])
+            agent.episode_trace = episode_trace
         print("Instrcution: ", obs["instruction"]['text'])
 
         image = transform_rgb_bgr(obs["rgb"])  # 224*224*3
@@ -115,11 +134,17 @@ def main(args, send_queue, receive_queue):
                 break
             
             agent_state = env.sim.get_agent_state()
-            action = agent.act(obs, agent_state, send_queue, receive_queue)
+            try:
+                action = agent.act(obs, agent_state, send_queue, receive_queue)
 
-            if action == None:
-                continue
-            obs = env.step(action)
+                if action == None:
+                    continue
+                obs = env.step(action)
+            except Exception as exc:
+                if episode_trace is not None:
+                    episode_trace.finish('error', count_steps,
+                                         error={'type': type(exc).__name__, 'message': str(exc)})
+                raise
 
             count_steps += 1
             
@@ -128,6 +153,8 @@ def main(args, send_queue, receive_queue):
             # cv2.waitKey(1)
 
         if args.gui_closed:
+            if episode_trace is not None:
+                episode_trace.finish('interrupted', count_steps, metrics=env.get_metrics())
             print("GUI closed; stopping run.")
             break
 
@@ -183,6 +210,8 @@ def main(args, send_queue, receive_queue):
         log += ", ".join(m + ": {:.3f}".format(v) for m,v in metrics.items())
         print(log)
         logging.info(log)
+        if episode_trace is not None:
+            episode_trace.finish('completed', count_steps, metrics=metrics)
 
 
         

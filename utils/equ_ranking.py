@@ -20,7 +20,7 @@ class Equilibrium_Ranking():
     
     Args:
     """
-    def __init__(self, text_queries, logger=None):
+    def __init__(self, text_queries, logger=None, episode_trace=None):
         
         # Hyperparameters
         self.lambda_G = 0.1
@@ -29,6 +29,7 @@ class Equilibrium_Ranking():
         self.eta_D = 0.1
         self.iterations = 500
         self.bise = 0.05
+        self.trace = None
         
         # target_hint = "Hint: the target category is " + object_category
         
@@ -37,11 +38,37 @@ class Equilibrium_Ranking():
         message.append({"role": "system", "content": Parsing_prompt})
         message.append({"role": "user", "content": self.text_description})
         self.response_message = chat_with_gpt(message)
+        if episode_trace is not None:
+            episode_trace.emit('parsing_response', raw_content=self.response_message,
+                               prompt_ref='run.json#/prompts/parsing')
         
         if logger != None:
             self.logger = logger
         
-    def equilibrium_search(self, base64_image_list, candidate_id):
+    def equilibrium_search(self, base64_image_list, candidate_id, trace=None):
+        self.trace = trace
+        try:
+            if trace is not None:
+                trace.iterations = self.iterations
+                trace.emit('search_parameters', iterations=self.iterations,
+                           generator_samples=5, discriminator_samples=5, bias=self.bise,
+                           lambda_G=self.lambda_G, lambda_D=self.lambda_D,
+                           eta_G=self.eta_G, eta_D=self.eta_D)
+            result = self._equilibrium_search(base64_image_list, candidate_id)
+            if trace is not None:
+                trace.finish('completed' if trace.initialized else 'early_reject',
+                             selected_candidate_id=result,
+                             selected_policy_index=self.selected_policy_index if trace.initialized else None,
+                             reason=None if trace.initialized else 'generator_support_contains_only_reject_option')
+            return result
+        except Exception as exc:
+            if trace is not None:
+                trace.finish('error', error={'type': type(exc).__name__, 'message': str(exc)})
+            raise
+        finally:
+            self.trace = None
+
+    def _equilibrium_search(self, base64_image_list, candidate_id):
 
         self.candidate_id = candidate_id
         chat_history_for_generator_correct = []
@@ -87,6 +114,13 @@ class Equilibrium_Ranking():
         pi_D_1 = self._normalize_initial_policy(plm_v_given_x_y, axis=0)
         pi_G = pi_G_1
         pi_D = pi_D_1
+        if self.trace is not None:
+            self.trace.emit('policy_layout', policy_candidate_order=generative_idx,
+                            verdict_order=['correct', 'incorrect'],
+                            discriminator_key_to_candidate_id=dict(zip(plm_v_given_x_y, generative_idx)),
+                            generator_normalization_input=plm_y_given_x_v,
+                            discriminator_normalization_input=plm_v_given_x_y)
+            self.trace.snapshot(0, pi_G, pi_D)
         # Print initial policies
         print("Initial Generator Policy:", pi_G_1)
         print("Initial Discriminator Policy:", pi_D_1)
@@ -112,12 +146,18 @@ class Equilibrium_Ranking():
             # Update policies
             pi_G = self._update_policy(Q_G, pi_G_1, self.lambda_G, self.eta_G, t)
             pi_D = self._update_policy(Q_D, pi_D_1, self.lambda_D, self.eta_D, t)
+            if self.trace is not None:
+                self.trace.updates_completed = t
+                if t in {self.iterations // 4, self.iterations // 2,
+                         3 * self.iterations // 4, self.iterations}:
+                    self.trace.snapshot(t, pi_G, pi_D)
 
         # Display the final policies
         print("Final Generator Policy:", pi_G)
         print("Final Discriminator Policy:", pi_D)
         
-        return generative_idx[pi_G['correct'].argmax(axis=0)]
+        self.selected_policy_index = pi_G['correct'].argmax(axis=0)
+        return generative_idx[self.selected_policy_index]
         # else:
         #     return generative_probabilities_correct.index(max(generative_probabilities_correct))
                         
@@ -167,20 +207,44 @@ class Equilibrium_Ranking():
     def _get_generative_probabilities(self, chat_history, num_samples=5):
         id_list = []
         responses = []
+        response_ids = []
+        if self.trace is not None:
+            self.trace.emit('query_batch', role='generator', requested_samples=num_samples,
+                            input_positions=list(range(len(self.candidate_id))))
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_to_message = {executor.submit(chat_with_gpt4v, chat_history): chat_history for _ in range(num_samples)}
-            for future in concurrent.futures.as_completed(future_to_message):
-                prompt = future_to_message[future]
+            future_to_message = {executor.submit(chat_with_gpt4v, chat_history): (chat_history, f'g-{n + 1}') for n in range(num_samples)}
+            for completion_order, future in enumerate(concurrent.futures.as_completed(future_to_message), 1):
+                prompt, sample_id = future_to_message[future]
                 try:
                     response = future.result()
                     responses.append(response)
+                    response_ids.append(sample_id)
                 except Exception as exc:
+                    if self.trace is not None:
+                        self.trace.emit('vlm_response', role='generator', sample_id=sample_id,
+                                        completion_order=completion_order, status='error',
+                                        error={'type': type(exc).__name__, 'message': str(exc)})
                     print(f'{prompt} generated an exception: {exc}')
+                else:
+                    if self.trace is not None:
+                        self.trace.emit('vlm_response', role='generator', sample_id=sample_id,
+                                        completion_order=completion_order, raw_content=response,
+                                        status='returned')
 
         for i, response in enumerate(responses):
-            self.logger.info(response)
-            ground_json = ast.literal_eval(response)
-            id_list.append(ground_json["object_id"]) 
+            if self.trace is None:
+                self.logger.info(response)
+            try:
+                ground_json = ast.literal_eval(response)
+                id_list.append(ground_json["object_id"])
+            except Exception as exc:
+                if self.trace is not None:
+                    self.trace.emit('sample_parse_error', role='generator', sample_id=response_ids[i],
+                                    error={'type': type(exc).__name__, 'message': str(exc)})
+                raise
+            if self.trace is not None:
+                self.trace.emit('sample_parsed', role='generator', sample_id=response_ids[i],
+                                parsed_object_id=ground_json['object_id'])
             
         counts = Counter(id_list)
         total_count = len(id_list)
@@ -199,57 +263,140 @@ class Equilibrium_Ranking():
             probabilities_value.append(probabilities['-1'])
         else:
             probabilities_value.append(0)
+        if self.trace is not None:
+            self.trace.emit('generator_aggregate', sample_ids=response_ids,
+                            requested_samples=num_samples, denominator_used=total_count,
+                            counts=counts, p_vlm_observed=probabilities,
+                            p_vlm_all_candidates={str(i): probabilities.get(str(i), 0)
+                                                  for i in list(self.candidate_id) + [-1]},
+                            policy_candidate_order=probabilities_idx,
+                            p_vlm_correct=probabilities_value,
+                            p_vlm_incorrect=[1 - value for value in probabilities_value])
         return probabilities_idx, probabilities_value
         
     def _get_discriminative_probabilities(self, chat_history, base64_image_list, generative_idx, num_samples=5):
         probabilities = {}
+        # Preserve the reference accumulation bug until separately approved.
         responses = []
+        response_ids = []
+        candidate_batches = []
+        candidate_mapping = {}
         gene_idx = 0
         for i, idx in enumerate(self.candidate_id):
             if idx in generative_idx:
+                new_sample_ids = []
+                input_position = i
+                if self.trace is not None:
+                    self.trace.emit('query_batch', role='discriminator', candidate_id=idx,
+                                    requested_samples=num_samples, input_positions=[i])
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, [base64_image_list[i]]), json_mode=False): base64_image_list[i] for _ in range(num_samples)}
-                    for future in concurrent.futures.as_completed(future_to_prompt):
-                        prompt = future_to_prompt[future]
+                    future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, [base64_image_list[i]]), json_mode=False): (base64_image_list[i], f'd-{idx}-{n + 1}') for n in range(num_samples)}
+                    for completion_order, future in enumerate(concurrent.futures.as_completed(future_to_prompt), 1):
+                        prompt, sample_id = future_to_prompt[future]
                         try:
                             response = future.result()
                             responses.append(response)
+                            response_ids.append(sample_id)
+                            new_sample_ids.append(sample_id)
                         except Exception as exc:
+                            if self.trace is not None:
+                                self.trace.emit('vlm_response', role='discriminator', candidate_id=idx,
+                                                sample_id=sample_id, completion_order=completion_order,
+                                                status='error', error={'type': type(exc).__name__, 'message': str(exc)})
                             print(f'{prompt} generated an exception: {exc}')
+                        else:
+                            if self.trace is not None:
+                                self.trace.emit('vlm_response', role='discriminator', candidate_id=idx,
+                                                sample_id=sample_id, completion_order=completion_order,
+                                                input_positions=[input_position], raw_content=response,
+                                                status='returned')
                             
                 probabilities[gene_idx] = 0
                 for i, response in enumerate(responses):
-                    self.logger.info(response)
+                    if self.trace is None:
+                        self.logger.info(response)
                     discriminate = response.strip().lower().strip(".\"'`")
+                    if self.trace is not None and response_ids[i] in new_sample_ids:
+                        self.trace.emit('sample_parsed', role='discriminator', candidate_id=idx,
+                                        sample_id=response_ids[i], parsed_verdict=discriminate,
+                                        recognized_verdict=discriminate in ('correct', 'incorrect'))
                     if discriminate == "correct":
                         probabilities[gene_idx] +=1
                     else:
                         probabilities[gene_idx] += 0
                         
+                candidate_mapping[gene_idx] = idx
+                if self.trace is not None:
+                    batch = dict(candidate_id=idx, internal_key=gene_idx,
+                                 new_sample_ids=new_sample_ids,
+                                 sample_pool_ids_used_by_current_code=list(response_ids),
+                                 correct_count_used=probabilities[gene_idx], denominator_used=num_samples)
+                    candidate_batches.append(batch)
+                    self.trace.emit('discriminator_candidate_score', **batch)
                 gene_idx += 1
 
         if gene_idx == 1:
             probabilities[-1] = num_samples - probabilities[0]
+            reject_all = dict(source='derived_complement', count=probabilities[-1],
+                              denominator_used=num_samples, additional_logical_samples=0,
+                              source_internal_key=0)
         else:
             responses = []
+            reject_sample_ids = []
+            if self.trace is not None:
+                self.trace.emit('query_batch', role='discriminator', candidate_id=-1,
+                                scope='all_input_images', requested_samples=num_samples,
+                                input_positions=list(range(len(base64_image_list))))
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, base64_image_list), json_mode=False): base64_image_list for _ in range(num_samples)}
-                for future in concurrent.futures.as_completed(future_to_prompt):
-                    prompt = future_to_prompt[future]
+                future_to_prompt = {executor.submit(chat_with_gpt4v, chat_history + self.create_payload(self.text_description, base64_image_list), json_mode=False): (base64_image_list, f'd-reject-{n + 1}') for n in range(num_samples)}
+                for completion_order, future in enumerate(concurrent.futures.as_completed(future_to_prompt), 1):
+                    prompt, sample_id = future_to_prompt[future]
                     try:
                         response = future.result()
                         responses.append(response)
+                        reject_sample_ids.append(sample_id)
                     except Exception as exc:
+                        if self.trace is not None:
+                            self.trace.emit('vlm_response', role='discriminator', candidate_id=-1,
+                                            sample_id=sample_id, completion_order=completion_order,
+                                            status='error', error={'type': type(exc).__name__, 'message': str(exc)})
                         print(f'{prompt} generated an exception: {exc}')
+                    else:
+                        if self.trace is not None:
+                            self.trace.emit('vlm_response', role='discriminator', candidate_id=-1,
+                                            scope='all_input_images', sample_id=sample_id,
+                                            completion_order=completion_order, raw_content=response,
+                                            status='returned')
             probabilities[-1] = 0            
             for i, response in enumerate(responses):
                 discriminate = response.strip().lower().strip(".\"'`")
+                if self.trace is not None:
+                    self.trace.emit('sample_parsed', role='discriminator', candidate_id=-1,
+                                    sample_id=reject_sample_ids[i], parsed_verdict=discriminate,
+                                    recognized_verdict=discriminate in ('correct', 'incorrect'))
                 if discriminate == "incorrect":
                     probabilities[-1] +=1
                 else:
                     probabilities[-1] += 0
 
                 
+            reject_all = dict(source='queried_all_input_images', count=probabilities[-1],
+                              sample_ids=reject_sample_ids, denominator_used=num_samples)
+
+        if self.trace is not None:
+            candidate_mapping[-1] = -1
+            self.trace.emit('discriminator_aggregate', candidate_batches=candidate_batches,
+                            internal_key_to_candidate_id=candidate_mapping,
+                            verdict_order=['correct', 'incorrect'], reject_all=reject_all,
+                            counts_used=probabilities, denominator_used=num_samples,
+                            p_vlm_before_bias={key: [value/num_samples, 1-value/num_samples]
+                                               for key, value in probabilities.items()},
+                            bias=self.bise,
+                            normalization_input={key: [value/num_samples + self.bise,
+                                                       1-(value/num_samples) + self.bise]
+                                                 for key, value in probabilities.items()},
+                            values_outside_probability_range=any(
+                                value < 0 or value > num_samples for value in probabilities.values()))
         print(probabilities)            
         return {key:[value/num_samples + self.bise, 1-(value/num_samples) + self.bise] for key, value in probabilities.items()}
     

@@ -58,12 +58,89 @@ are outside scope.
 14. **Preserve the original README section.** In `README.md`, everything below
     the line `(Below this line is the original README of the [VLN-game](https://github.com/ybgdgh/VLN-Game) code)`
     is the original paper-code README. Do not edit it.
+15. **Defer the discriminator aggregation correction.** Preserve the current
+    discriminator calculations until the user has obtained the results of the
+    100-episode GPT-4o test. Completion of that test is not automatic approval
+    to apply the correction; discuss the results and obtain explicit approval
+    first. Any tracing added before then must expose the existing calculation
+    faithfully, without silently resetting, renormalizing, or clamping it.
 
 ### Known Issues and Pending Work
 
 - **Candidate image integrity — pending confirmation.** The Open3D GUI has two writers for the same `Vis-<id>.jpeg` filename pattern: `on_top_rendered()` writes a full-scene 640×800 image using the frame index, while `on_image_rendered()` writes the intended 960×480 top-view plus first-view composite using the candidate ID. The agent reads `Vis-<id>.jpeg` by file existence only. Most candidate files in the last run were 640×800. Treat VLM candidate-image inputs as suspect until confirmed. Do not fix this issue unless the user explicitly asks.
-- **Structured per-episode trace — pending feature.** The full VLM inputs, prompts, generator/discriminator raw responses, policy arrays, probability arrays, selected candidates, and candidate-level rewards are not persisted in a structured trace. Do not implement this feature unless the user explicitly asks.
+- **Structured per-episode trace — user-approved implementation (2026-10-25).** Single-process `vlm_game` runs archive exact input-image buffers and per-episode JSONL events under a unique `logs/<experiment>/traces/<run-id>/` directory. The trace records prompts/configuration, logical sample returns/errors, actual aggregation pools and denominators, initial and checkpoint policies, decisions, and episode metrics. Preserve the existing Discriminator calculation until separate approval. Internal HTTP retries, billed token usage, and hypothetical candidate-level navigation rewards are not recorded. See the local README trace-archive section and the change entry below.
 - **Baseline-first policy.** The current priority is to run the original CLIP-only language mode and obtain interpretable success/SPL/DTG results. Keep program logic frozen until the baseline is reviewed.
+
+#### Discriminator response accumulation — confirmed bug, correction deferred
+
+**Status (2026-10-25):** documented only; not fixed. The user wants results
+from the 100-episode GPT-4o test before considering this behavioral correction.
+
+**Location and origin:** `Equilibrium_Ranking._get_discriminative_probabilities()`
+in `utils/equ_ranking.py`. The same accumulation defect is present in the
+original paper-code commit `58ca7f4`; it predates the local change from JSON
+discriminator responses to plain-text `correct` / `incorrect`. This source
+history does not establish which revision produced the paper's reported metrics.
+
+**Detailed cause:**
+
+- `responses = []` is initialized once, outside the per-candidate loop.
+- Each candidate's five returned responses are appended to the same list.
+- The scoring loop then counts `correct` responses across that entire list,
+  including responses about earlier candidates, but still divides by
+  `num_samples` (normally five).
+- Consequently, candidate A uses A's responses; candidate B uses A+B;
+  candidate C uses A+B+C. This contamination is confined to one search
+  invocation, not carried between searches or episodes.
+- The scoring loop also logs the accumulated responses again for every
+  candidate. Discriminator response-line counts therefore overcount actual
+  API requests and cannot reliably measure token use. The multi-candidate
+  reject-all query's response list is separately reset.
+
+**Impact and scope:**
+
+- Example: A receives 4/5 `correct`, B receives 2/5. A is scored as 0.8,
+  but B is incorrectly scored as `(4 + 2) / 5 = 1.2` instead of 0.4.
+- With the existing 0.05 bias, B's `[correct, incorrect]` values become
+  `[1.25, -0.15]`; normalization yields approximately `[1.13636, -0.13636]`.
+  Subsequent `np.log()` of a negative policy entry can produce NaNs and
+  invalidate later policy updates. Contamination also distorts valid-looking
+  values within [0, 1], so range checks alone cannot identify every affected
+  search. The intended bias producing an unnormalized 1.05 is not itself a bug.
+- The defect applies when at least two non-reject candidates are individually
+  discriminated. It does not contaminate the single-candidate branch, the
+  Generator-only early rejection, or CLIP-only navigation. The number of
+  input images is not the same as the number of discriminated candidates.
+- Candidate selection and navigation metrics may change after correction.
+  This is independent of the native Open3D `FEngine::loop` crash investigation.
+
+**Proposed fix and validation plan — only after results and explicit approval:**
+
+1. Archive the uncorrected 100-episode GPT-4o results and identify their source
+   revision before applying the correction.
+2. Reset `responses` inside the per-candidate branch, immediately before
+   submitting that candidate's queries, so its score uses only its own batch.
+   Changing the denominator to the accumulated list length would not fix
+   cross-candidate contamination.
+3. Preserve the five-sample protocol, prompts, bias, equilibrium equations,
+   candidate mapping, and existing reject-all branches. Treat failed-query
+   denominator handling and invalid-response handling as separate decisions.
+4. Replay fixed mocked responses without API calls: verify A=0.8 and B=0.4
+   for the example above; test three candidates, candidate-order independence
+   of mapped frequencies, single-candidate complement behavior, and all-reject
+   early return. Check initialized policies and checkpoints for finite,
+   nonnegative, normalized values on these valid-response cases.
+5. Follow with an approved 3-5 episode VLM GUI smoke run. Keep corrected
+   results separately labelled from uncorrected reference-implementation runs;
+   do not assume either better metrics or equivalence to the paper's numbers.
+6. Record the approved correction under "Changes From the Original Paper Repo"
+   only when it has actually been implemented and verified.
+
+If structured tracing is implemented first, record each raw response once and
+separately record the exact response pool and denominator used by the current
+calculation. Preserve out-of-range values and mark numerical anomalies rather
+than silently repairing them; record initialization, updates 125/250/375/500,
+and the actual returned candidate or error.
 
 ## Local Setup
 
@@ -265,6 +342,73 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
    - Asks for a model only in VLM mode, using the dynamic `VLN_MODELS` list.
    - CLIP mode requires no API key.
    - Reason: simplify local GUI demos; it calls the existing entrypoints.
+
+8. **`utils/vis_gui.py`** — user-approved GUI-thread/callback compatibility fix.
+   - Episode-change scene clearing and FPS/info widget updates now execute on
+     the GUI event-loop thread instead of the `UpdateMain` worker.
+   - Deferred callbacks bind their frame/candidate data and episode identity;
+     image-save callbacks use the identity of the request that produced them.
+   - Reason: address concrete threading defects after recurring native
+     `FEngine::loop` segmentation faults during GUI evaluation. The exact
+     native crash cause is not yet proven.
+   - Navigation, evaluation, manual-query/pause controls, image composition,
+     and the shared `Vis-<id>.jpeg` filename convention are preserved. The
+     documented candidate-image filename collision remains pending.
+   - Validation (2026-10-25): delayed-frame/episode-boundary GUI checks,
+     six synthetic candidate composites, and query/pause/resume callbacks
+     passed. A three-episode DeepSeek `vlm_game` GUI smoke run completed
+     in 17m37s with 1,095 frame updates, 19/19 candidate renders, no thread
+     assertion failures or new kernel crash records, and clean GUI shutdown.
+     This short test does not establish multi-hour stability.
+
+9. **`main_vln.py`, `agents/vlnav_agent_vlm.py`, `utils/equ_ranking.py`,
+   `utils/chat_utils.py`, `utils/equ_trace.py`** — user-approved structured
+   equilibrium tracing for single-process `vlm_game` runs.
+   - Unique run manifests record exact prompts, non-secret effective API
+     configuration, task configuration, and source identity. Episode JSONL
+     files contain parsing, search metadata, raw logical sample returns/errors,
+     parsed values, aggregates, policy mappings, initialization and updates
+     125/250/375/500, returned decisions/errors, and episode outcomes.
+   - Images are archived from the exact buffer encoded for each request, using
+     unique search/input/candidate filenames and SHA-256 hashes. Existing file
+     reads, image dimensions, candidate ordering, and render behavior are not
+     changed. Unexpected images are preserved and flagged.
+   - Legacy raw response logging moves into the structured trace when tracing
+     is active; `eval.log` retains metrics and short trace references. Events
+     are flushed immediately so partial traces survive native process crashes.
+   - The known Discriminator accumulation defect, fixed-five denominator,
+     reject-all branches, and numerical anomalies are preserved. Each raw
+     response is traced once, with the actual reused scoring pools recorded
+     separately. Nonfinite numbers use explicit JSON string representations.
+   - This is an observability change, not the deferred aggregation correction.
+   - Validation (2026-10-25): ten offline tests passed, plus five comparisons
+     against pre-change source with identical mocked requests, policy arrays,
+     and returned candidates (including the accumulation/NaN case). A real
+     three-episode DeepSeek GUI run completed in 17m11s: ten searches, 19 archived
+     inputs, 60 logical sample returns, and ten policy snapshots. An independent
+     audit matched every request's ordered input hashes to the archives and
+     recomputed all checkpoints from the recorded inputs. There were no thread
+     failures or new kernel crash records, and shutdown released the GPU.
+   - That smoke archive confirmed 15/19 actual VLM input buffers were 640x800
+     rather than 960x480; all were retained and flagged. This validates the
+     archive's fidelity, not candidate-image correctness or multi-hour stability.
+
+10. **`utils/equ_report.py`, `utils/equ_trace.py`** — user-approved plain-text
+    episode reports derived from the structured trace.
+    - Each closed episode automatically receives `equilibrium.txt` alongside
+      `equilibrium.jsonl`. `python -m utils.equ_report <archive-or-jsonl-path>`
+      regenerates reports for existing or interrupted archives without API calls.
+    - Reports show raw opinions, actual candidate mappings and scoring pools,
+      initialization inputs, all four policy columns at each checkpoint, episode
+      outcomes, image references, and numerical/input anomalies. Output is ASCII,
+      100-column wrapped, with display rounding only; JSONL/images are unchanged.
+    - Truncated final records and missing completion events are explicitly marked.
+      Earlier malformed records are not silently skipped. Reporting failures do
+      not abort navigation or change metrics. The Discriminator correction and
+      candidate-image overwrite correction remain deferred.
+    - Validation (2026-10-25): all 20 offline trace/report tests passed. Reports
+      were generated for all three smoke-run episodes (ten searches); SHA-256
+      checks confirmed all 23 original manifest/JSONL/image files were unchanged.
 
 #### Data compatibility changes
 

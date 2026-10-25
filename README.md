@@ -60,6 +60,76 @@ Practical notes:
 - Closing the Open3D window stops the run.
 - The full VLM run covers 316 episodes and has API cost. Start with 5 episodes.
 
+### VLM-Game trace archive
+
+Single-process `main_vln.py --vln_mode vlm_game` runs automatically create a
+unique trace directory below `dump/logs/vlobjectnav-vlm_game/traces/` (or the
+corresponding `--dump_location` and experiment name). `eval.log` prints the
+run directory and short references for each episode/search.
+
+```text
+traces/<run-id>/
+  run.json
+  episodes/001/
+    equilibrium.jsonl
+    equilibrium.txt
+    images/search-001-input-000-candidate-15.jpeg
+```
+
+`run.json` records effective model/request settings, exact prompts, task config,
+and source hashes without API credentials. Each episode's JSONL records parsing,
+search inputs, individual returned samples/errors, aggregation pools and
+denominators, initial policies, updates 125/250/375/500, selected candidates,
+and final episode metrics. Raw response text and its parsed interpretation are
+separate events linked by sample ID. Records are flushed as they are written;
+an absent `search_end` or `episode_end` indicates an incomplete operation.
+
+Archive **the entire run directory alongside `eval.log`**, rather than just the
+mutable GUI image directory. Each archived image is the exact byte buffer
+encoded for the VLM, with its hash, dimensions, source path, and input position.
+Unexpected-sized or unreadable image buffers are preserved and flagged, not
+substituted. This records existing inputs without fixing the known shared-file
+overwrite issue.
+
+The deferred Discriminator accumulation bug is also preserved and exposed:
+batch-local sample IDs and the actual accumulated scoring pool are recorded
+separately. Nonfinite numerical values are represented by the JSON strings
+`"NaN"`, `"Infinity"`, and `"-Infinity"`, with policy diagnostics; no values are
+clamped or repaired. The five logical samples are traced, but internal HTTP
+retry attempts and billed token usage are not individually captured. CLIP,
+Generator-only, and Ranking modes retain their existing logging.
+
+#### Terminal-readable episode reports
+
+After an episode trace closes, `equilibrium.txt` is generated alongside its
+JSONL. It contains an episode/search overview, raw opinions with sample IDs,
+actual aggregation pools and denominators, image paths/hashes, initialization
+inputs, and complete Generator/Discriminator policy tables at every recorded
+checkpoint. Unexpected image sizes, reused response pools, nonfinite/negative
+policies, query errors, and incomplete operations are highlighted.
+
+Reports are plain ASCII, wrapped to 100 columns. Displayed numeric fields use
+10 significant digits and scientific notation where appropriate; JSONL remains
+the exact, full-precision record. Text conversion does not recompute probabilities,
+call the VLM, or modify JSONL/images. A report-generation failure is logged without
+changing episode outcomes.
+
+Generate or regenerate reports for an existing run or a single episode:
+
+```bash
+python -m utils.equ_report "/path/to/run-directory"
+python -m utils.equ_report "/path/to/episodes/001/equilibrium.jsonl"
+less -S "/path/to/episodes/001/equilibrium.txt"
+```
+
+The converter also accepts a directory containing multiple runs. It marks
+missing completion events and warns about a truncated, unterminated final JSONL
+record. Invalid records earlier in a file cause an error rather than being
+silently skipped. Only derived `.txt` files are written or replaced.
+
+Offline trace/parity checks (no API calls):
+`python -m unittest discover -s tests -v`.
+
 ---
 
 (Below this line is the original README of the [VLN-game](https://github.com/ybgdgh/VLN-Game) code)

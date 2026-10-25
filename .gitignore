@@ -11,6 +11,9 @@ mobile_sam.pt
 yolov8l-world.pt
 human_eval.py
 test*
+!tests/
+!tests/test_equ_trace.py
+!tests/test_equ_report.py
 saved_pcd
 create*
 visualize*

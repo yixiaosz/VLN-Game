@@ -19,6 +19,7 @@ import os
 import numpy as np
 import threading
 import time
+from functools import partial
 import torch
 from multiprocessing import Process, Queue, set_start_method
 import cv2
@@ -299,7 +300,9 @@ class ReconstructionWindow:
                       objects, 
                       point_sum_points,
                       point_sum_colors,
-                      candidate_id):
+                      candidate_id,
+                      candidate_image,
+                      episode_n):
         
         self.widget3d.scene.clear_geometry()
         if self.rgb_pc_box.checked:
@@ -333,7 +336,9 @@ class ReconstructionWindow:
             # print('send_image')
             while True:
                 try:
-                    self.widget3d.scene.scene.render_to_image(self.on_image_rendered)
+                    self.widget3d.scene.scene.render_to_image(partial(
+                        self.on_image_rendered, episode_n=episode_n,
+                        candidate_id=candidate_id, candidate_image=candidate_image))
                     break  # 成功后跳出循环
                 except Exception as e:
                     print(f"Error rendering image, retrying: {e}")
@@ -351,7 +356,18 @@ class ReconstructionWindow:
                       plan_path,
                       vis_image,
                       Open3d_goal_pose,
-                      candidate_id):
+                      candidate_id,
+                      episode_changed,
+                      fps_text,
+                      info,
+                      episode_n,
+                      frame_idx):
+
+        # All scene and widget changes run on the GUI event-loop thread.
+        if episode_changed:
+            self.widget3d.scene.clear_geometry()
+        self.output_fps.text = fps_text
+        self.output_info.text = info
         
         # update view
         camera_position = traj[-1][:3, 3]
@@ -428,7 +444,9 @@ class ReconstructionWindow:
             
             while True:
                 try:
-                    self.widget3d.scene.scene.render_to_image(self.on_top_rendered)
+                    self.widget3d.scene.scene.render_to_image(partial(
+                        self.on_top_rendered, episode_n=episode_n,
+                        frame_idx=frame_idx))
                     break  # 成功后跳出循环
                 except Exception as e:
                     print(f"Error rendering image, retrying: {e}")
@@ -473,13 +491,13 @@ class ReconstructionWindow:
         # self.widget3d.scene.add_geometry("goal_pose", goal_pcd, goal_material)
 
 
-    def on_top_rendered(self, image):
+    def on_top_rendered(self, image, episode_n, frame_idx):
         
         dump_dir = "{}/{}/episodes/{}".format(self.args.dump_location,
-                                    self.args.exp_name, self.episode_n)
+                                    self.args.exp_name, episode_n)
         if not os.path.exists(dump_dir):
             os.makedirs(dump_dir)
-        image_filename = '{}/Vis-{}.jpeg'.format(dump_dir, self.idx)
+        image_filename = '{}/Vis-{}.jpeg'.format(dump_dir, frame_idx)
         
 
         # # Convert the open3d.cuda.pybind.geometry.Image object to a numpy array
@@ -529,13 +547,13 @@ class ReconstructionWindow:
 
 
 
-    def on_image_rendered(self, image):
+    def on_image_rendered(self, image, episode_n, candidate_id, candidate_image):
         
         dump_dir = "{}/{}/episodes/{}".format(self.args.dump_location,
-                                    self.args.exp_name, self.episode_n)
+                                    self.args.exp_name, episode_n)
         if not os.path.exists(dump_dir):
             os.makedirs(dump_dir)
-        image_filename = '{}/Vis-{}.jpeg'.format(dump_dir, self.candidate_id)
+        image_filename = '{}/Vis-{}.jpeg'.format(dump_dir, candidate_id)
         # image_filename = '{}/Vis-{}-{}.png'.format(dump_dir, self.idx, self.candidate_id)
         s_time = time.time()
 
@@ -543,7 +561,7 @@ class ReconstructionWindow:
         np_image = np.asarray(image)
         resized_image1 = cv2.resize(np_image, (480, 480))
         
-        candidate_image = np.asarray(self.candidate_image)
+        candidate_image = np.asarray(candidate_image)
         resized_image2 = cv2.resize(candidate_image, (480, 480))
         
         # Combine images horizontally
@@ -582,7 +600,7 @@ class ReconstructionWindow:
         draw.rectangle([rect_x0, rect_y0, rect_x1, rect_y1], fill="white")
 
         # Add text to image
-        draw.text(position, str(self.candidate_id), fill="red", font=font)
+        draw.text(position, str(candidate_id), fill="red", font=font)
 
         # Save the image using PIL
         pil_image.save(image_filename)
@@ -623,9 +641,9 @@ class ReconstructionWindow:
             if not self.receive_queue.empty():
                 image_rgb, image_depth, annotated_image, objects, point_sum_points, point_sum_colors, traj, episode_n, plan_path, vis_image, Open3d_goal_pose, time_step_info, candidate_id = self.receive_queue.get()
                 
-                if episode_n > self.episode_n:
+                episode_changed = episode_n > self.episode_n
+                if episode_changed:
                     self.idx = 0
-                    self.widget3d.scene.clear_geometry()
                     self.episode_n = episode_n
                     self.full_pcd_poinst = []
                     self.full_pcd_colors = []
@@ -661,8 +679,7 @@ class ReconstructionWindow:
                         end = time.time()
                         elapsed = end - start
                         start = time.time()
-                        self.output_fps.text = 'FPS: {:.3f}'.format(fps_interval_len /
-                                                                    elapsed)
+                        fps_text = 'FPS: {:.3f}'.format(fps_interval_len / elapsed)
 
                     # Output info
                     info = 'Frame {}/{}\n\n'.format(self.idx, 500)
@@ -674,10 +691,8 @@ class ReconstructionWindow:
                                         formatter={'float_kind': lambda x: f"{x:.2f}"}))
                     info += time_step_info
 
-                    self.output_info.text = info
-
                     gui.Application.instance.post_to_main_thread(
-                        self.window, lambda: self.update_render(
+                        self.window, partial(self.update_render,
                             depth,
                             color,
                             semantic, 
@@ -689,7 +704,12 @@ class ReconstructionWindow:
                             plan_path,
                             vis_image,
                             Open3d_goal_pose,
-                            candidate_id)
+                            candidate_id,
+                            episode_changed,
+                            fps_text,
+                            info,
+                            episode_n,
+                            self.idx + 1)
                             )
                     self.idx += 1
                     
@@ -697,13 +717,14 @@ class ReconstructionWindow:
                     
                     for index, i in enumerate(candidate_id):
                         self.candidate_id = 0
-                        self.candidate_image = image_rgb[index]
                         gui.Application.instance.post_to_main_thread(
-                            self.window, lambda i = i: self.render_top_view_map(
+                            self.window, partial(self.render_top_view_map,
                                 objects, 
                                 point_sum_points,
                                 point_sum_colors,
-                                i)
+                                i,
+                                image_rgb[index],
+                                episode_n)
                             )
                         while (self.candidate_id != -1):
                             time.sleep(0.01)
@@ -711,4 +732,3 @@ class ReconstructionWindow:
 
 
             time.sleep(0.1)
-

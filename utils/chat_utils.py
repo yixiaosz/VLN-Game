@@ -8,6 +8,7 @@ import time
 import requests
 import json
 from arguments import get_args
+from urllib.parse import urlsplit, urlunsplit
 
 
 gpt_name = [
@@ -62,6 +63,44 @@ import openai
 from openai.error import OpenAIError
 openai.api_key = api_key
 openai.api_base = api_base
+
+
+def trace_configuration():
+    """Non-secret effective request settings, for the structured run manifest."""
+    def redact(value):
+        if isinstance(value, dict):
+            return {key: ('<redacted>' if key.lower() in {
+                'api', 'api_key', 'authorization', 'password', 'secret', 'token',
+                'access_token', 'api_token'} else redact(item))
+                    for key, item in value.items()}
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+        return value
+
+    vision_model = os.environ.get("VLN_MODEL") or gpt_name[args.gpt_type]
+    configurations = {}
+    for role, model, limit, temperature in (
+            ('parsing', text_model, 512, 0.5),
+            ('generator', vision_model, 100, 1.1),
+            ('discriminator', vision_model, 100, 1.1)):
+        options = _model_options(model).copy()
+        options.setdefault('max_tokens', limit)
+        if supports_temperature:
+            options.setdefault('temperature', temperature)
+        else:
+            options.pop('temperature', None)
+        options['model'] = model
+        options.pop('messages', None)
+        options.pop('response_format', None)
+        if role != 'discriminator':
+            options['response_format'] = {'type': 'json_object'}
+        configurations[role] = redact(options)
+    # The parsing request forces 512 tokens only before applying model options,
+    # just as chat_with_gpt does. No authorization headers or keys are included.
+    url = urlsplit(api_base)
+    safe_base = urlunsplit((url.scheme, url.netloc.rsplit('@', 1)[-1], url.path, '', ''))
+    return {'api_base': safe_base, 'supports_temperature': supports_temperature,
+            'requests': configurations}
 
 
 
@@ -195,4 +234,3 @@ def chat_with_llama3(user_prompt, chat_history):
     chat_history.append({"role": "assistant", "content": response_message})
     print(response_message)
     return response_message
-
