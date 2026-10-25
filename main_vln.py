@@ -32,6 +32,9 @@ from habitat.utils.visualizations import maps
 from utils.equ_trace import EquilibriumTraceRun
 from utils.chat_utils import trace_configuration
 from agents.system_prompt import Parsing_prompt, generator_prompt, discriminator_prompt
+from utils.candidate_images import (
+    CandidateImageRequests, CandidateRenderError, CandidateRenderCancelled,
+    PROTOCOL as CANDIDATE_IMAGE_PROTOCOL, RENDER_TIMEOUT_SECONDS)
 
 
 def draw_top_down_map(info, output_size):
@@ -43,7 +46,7 @@ def transform_rgb_bgr(image):
     return image[:, :, [2, 1, 0]]
 
 # def generate_point_cloud(window):
-def main(args, send_queue, receive_queue):
+def main(args, send_queue, receive_queue, candidate_images=None):
     args.exp_name = "vlobjectnav-"+ args.vln_mode# + "-mini"
     
     if args.gpt_type == 3:
@@ -80,7 +83,7 @@ def main(args, send_queue, receive_queue):
         env._sim, 0.1, False
     )
 
-    agent = VLObjectNav_Agent(args, follower, logging)
+    agent = VLObjectNav_Agent(args, follower, logging, candidate_images=candidate_images)
 
     agg_metrics: Dict = defaultdict(float)
 
@@ -95,6 +98,8 @@ def main(args, send_queue, receive_queue):
             log_dir, {'mode': args.vln_mode, 'requested_episodes': num_episodes,
                       'config_seed': config.SEED, 'argument_seed': args.seed,
                       'visualize': args.visualize, 'task_config': str(config),
+                      'candidate_image_protocol': CANDIDATE_IMAGE_PROTOCOL,
+                      'candidate_render_timeout_seconds': RENDER_TIMEOUT_SECONDS,
                       'api_configuration': trace_configuration()},
             {'parsing': Parsing_prompt, 'generator': generator_prompt,
              'discriminator': discriminator_prompt}, logging)
@@ -140,10 +145,15 @@ def main(args, send_queue, receive_queue):
                 if action == None:
                     continue
                 obs = env.step(action)
+            except CandidateRenderCancelled:
+                args.gui_closed = True
+                break
             except Exception as exc:
                 if episode_trace is not None:
                     episode_trace.finish('error', count_steps,
                                          error={'type': type(exc).__name__, 'message': str(exc)})
+                if isinstance(exc, CandidateRenderError) and candidate_images is not None:
+                    candidate_images.request_gui_close()
                 raise
 
             count_steps += 1
@@ -224,15 +234,23 @@ def main(args, send_queue, receive_queue):
     return
 
 
-def visualization_thread(send_queue, receive_queue):
-    app = gui.Application.instance
-    app.initialize()
-    mono = app.add_font(gui.FontDescription(gui.FontDescription.MONOSPACE))
-    app_win = ReconstructionWindow(args, mono, send_queue, receive_queue)
+def visualization_thread(send_queue, receive_queue, candidate_images=None):
+    app_win = None
     try:
+        app = gui.Application.instance
+        app.initialize()
+        mono = app.add_font(gui.FontDescription(gui.FontDescription.MONOSPACE))
+        app_win = ReconstructionWindow(args, mono, send_queue, receive_queue, candidate_images)
+        if candidate_images is not None:
+            candidate_images.set_gui_close_callback(
+                lambda: app.post_to_main_thread(app_win.window, app_win.window.close))
         app.run()
     finally:
         args.gui_closed = True
+        if app_win is not None:
+            app_win.is_done = True
+        if candidate_images is not None:
+            candidate_images.close()
 
 
 if __name__ == "__main__":
@@ -241,19 +259,26 @@ if __name__ == "__main__":
 
     send_queue = Queue()
     receive_queue = Queue()
+    candidate_images = CandidateImageRequests() if 'vlm' in args.vln_mode else None
 
     gui_started = bool(args.visualize or 'vlm' in args.vln_mode)
     if gui_started:
         # Create a thread for the Open3D visualization
-        visualization = threading.Thread(target=visualization_thread, args=(send_queue, receive_queue,))
+        visualization = threading.Thread(target=visualization_thread, args=(send_queue, receive_queue, candidate_images))
         visualization.start()
 
     # Run ROS code in the main thread
-    main(args, send_queue, receive_queue)
+    exit_code = 0
+    try:
+        main(args, send_queue, receive_queue, candidate_images)
+    except CandidateRenderError:
+        logging.exception('Candidate image rendering failed; test stopped without completing the episode')
+        candidate_images.request_gui_close()
+        exit_code = 1
 
     if gui_started:
         visualization.join()
         sys.stdout.flush()
         sys.stderr.flush()
         logging.shutdown()
-        os._exit(0)
+        os._exit(exit_code)

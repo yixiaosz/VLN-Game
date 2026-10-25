@@ -55,10 +55,14 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(before, self.source_hashes(run.root))
 
     def test_accumulation_negative_values_and_nans_remain_visible(self):
-        _, _, report = self.search([15, 51], [15, 15, 15, 51, 51],
-                                   {15: ['correct'] * 4 + ['incorrect'],
-                                    51: ['correct'] * 2 + ['incorrect'] * 3,
-                                    -1: ['incorrect'] * 5})
+        # Historical rendering must not depend on reproducing the runtime bug.
+        path = self.root / 'equilibrium.jsonl'
+        fixture = Path(__file__).parent / 'fixtures' / 'legacy_discriminator.jsonl'
+        path.write_bytes(fixture.read_bytes())
+        (self.root / 'run.json').write_text(json.dumps({
+            'run_id': 'synthetic-legacy', 'discriminator_aggregation': 'uncorrected_reference_accumulation'}))
+        before = self.source_hashes(self.root)
+        report = write_episode_report(path).read_text()
         self.assertIn('REFERENCE ACCUMULATION: candidate 51', report)
         self.assertIn('10 pooled responses, 5 new', report)
         self.assertIn('Correct count used: 6 / denominator 5', report)
@@ -68,6 +72,19 @@ class ReportTests(unittest.TestCase):
         self.assertIn('NaN', report)
         self.assertIn('queried_all_input_images', report)
         self.assertIn('incorrect responses count toward rejection', report)
+        self.assertIn('uncorrected_reference_accumulation', report)
+        self.assertEqual(before, self.source_hashes(self.root))
+
+    def test_corrected_runtime_reports_candidate_local_scoring(self):
+        _, _, report = self.search([15, 51], [15, 15, 15, 51, 51],
+                                   {15: ['correct'] * 4 + ['incorrect'],
+                                    51: ['correct'] * 2 + ['incorrect'] * 3,
+                                    -1: ['incorrect'] * 5})
+        self.assertIn('candidate_local_responses_v1', report)
+        self.assertNotIn('REFERENCE ACCUMULATION', report)
+        self.assertNotIn('OUT-OF-RANGE', report)
+        self.assertNotIn('POLICY ANOMALY', report)
+        self.assertIn('Correct count used: 2 / denominator 5', report)
 
     def test_all_reject_has_no_fabricated_policy_snapshots(self):
         _, _, report = self.search([15], [-1] * 5, {})

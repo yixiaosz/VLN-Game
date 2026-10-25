@@ -206,6 +206,9 @@ def render_search(report, sid, events, warnings):
         report.add('Archive (relative to run root): ' + display(image.get('archive_path')), 4)
         report.add('Original source: ' + display(image.get('source_path')), 4)
         report.add('SHA-256: ' + display(image.get('sha256')), 4)
+        if image.get('render_completion'):
+            report.add('Completed render request: ' + display(image['render_completion'].get('request_id')), 4)
+            report.add('First-view SHA-256: ' + display(image['render_completion'].get('first_view_sha256')), 4)
     if not images:
         report.add('No archived input metadata recorded.')
 
@@ -373,6 +376,7 @@ def episode_report(path):
                'JSONL remains the exact, full-precision source. No probabilities are recalculated.')
     report.add('Logical samples are not billed HTTP request counts; internal retries/usage are not captured.')
     report.add('Manifest aggregation label: ' + display(manifest.get('discriminator_aggregation')))
+    report.add('Candidate image protocol: ' + display(manifest.get('candidate_image_protocol')))
     report.heading('EPISODE OUTCOME')
     report.add('Environment steps: ' + display(end.get('steps')))
     report.add('Recorded metrics: ' + display(end.get('metrics')))

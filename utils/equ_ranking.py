@@ -276,14 +276,14 @@ class Equilibrium_Ranking():
         
     def _get_discriminative_probabilities(self, chat_history, base64_image_list, generative_idx, num_samples=5):
         probabilities = {}
-        # Preserve the reference accumulation bug until separately approved.
-        responses = []
-        response_ids = []
         candidate_batches = []
         candidate_mapping = {}
         gene_idx = 0
         for i, idx in enumerate(self.candidate_id):
             if idx in generative_idx:
+                # Opinions and trace IDs belong only to this candidate's batch.
+                responses = []
+                response_ids = []
                 new_sample_ids = []
                 input_position = i
                 if self.trace is not None:

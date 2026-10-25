@@ -169,7 +169,7 @@ class TraceTests(unittest.TestCase):
             self.assertEqual(archived, base64.b64decode(encoded))
             self.assertEqual(hashlib.sha256(archived).hexdigest(), image['sha256'])
 
-    def test_multicandidate_accumulation_and_nans_are_preserved(self):
+    def test_multicandidate_scores_are_candidate_local_and_finite(self):
         result, error, _, calls, events, _ = self.compare(
             [15, 51], [15, 15, 15, 51, 51],
             {15: ['correct'] * 4 + ['incorrect'],
@@ -179,17 +179,25 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(len(calls), 20)
         self.assertEqual(len([e for e in events if e['event'] == 'vlm_response']), 20)
         aggregate = next(e for e in events if e['event'] == 'discriminator_aggregate')
-        self.assertEqual(aggregate['counts_used']['1'], 6)
+        self.assertEqual(aggregate['counts_used']['0'], 4)
+        self.assertEqual(aggregate['counts_used']['1'], 2)
         self.assertEqual(aggregate['denominator_used'], 5)
-        self.assertEqual(aggregate['p_vlm_before_bias']['1'], [1.2, 1 - 1.2])
-        self.assertTrue(aggregate['values_outside_probability_range'])
+        self.assertEqual(aggregate['p_vlm_before_bias']['0'], [0.8, 1 - 0.8])
+        self.assertEqual(aggregate['p_vlm_before_bias']['1'], [0.4, 0.6])
+        self.assertFalse(aggregate['values_outside_probability_range'])
         batches = aggregate['candidate_batches']
         self.assertEqual([len(b['new_sample_ids']) for b in batches], [5, 5])
-        self.assertEqual([len(b['sample_pool_ids_used_by_current_code']) for b in batches], [5, 10])
+        self.assertEqual([len(b['sample_pool_ids_used_by_current_code']) for b in batches], [5, 5])
+        self.assertTrue(all(b['new_sample_ids'] == b['sample_pool_ids_used_by_current_code'] for b in batches))
         checkpoints = [e for e in events if e['event'] == 'policy_snapshot']
-        self.assertLess(checkpoints[0]['pi_D']['1'][1], 0)
-        self.assertFalse(checkpoints[0]['diagnostics']['pi_D']['1']['nonnegative'])
-        self.assertIn('NaN', json.dumps(checkpoints[-1]))
+        self.assertEqual([e['update_iteration'] for e in checkpoints], [0, 125, 250, 375, 500])
+        for snapshot in checkpoints:
+            for policies in snapshot['diagnostics'].values():
+                for checks in policies.values():
+                    self.assertTrue(checks['finite'])
+                    self.assertTrue(checks['nonnegative'])
+                    self.assertTrue(checks['normalized'])
+        self.assertNotIn('NaN', json.dumps(checkpoints))
         end = next(e for e in events if e['event'] == 'search_end')
         self.assertEqual(end['selected_candidate_id'], result)
 
@@ -201,10 +209,54 @@ class TraceTests(unittest.TestCase):
              72: ['incorrect'] * 5, -1: ['incorrect'] * 5})
         self.assertEqual(len(calls), 25)
         aggregate = next(e for e in events if e['event'] == 'discriminator_aggregate')
-        self.assertEqual([b['correct_count_used'] for b in aggregate['candidate_batches']], [1, 2, 2])
-        self.assertEqual([len(b['sample_pool_ids_used_by_current_code']) for b in aggregate['candidate_batches']], [5, 10, 15])
+        self.assertEqual([b['correct_count_used'] for b in aggregate['candidate_batches']], [1, 1, 0])
+        self.assertEqual([len(b['sample_pool_ids_used_by_current_code']) for b in aggregate['candidate_batches']], [5, 5, 5])
         self.assertEqual(aggregate['reject_all']['source'], 'queried_all_input_images')
         self.assertEqual(len(calls[-1][1]), 3)
+
+    def test_candidate_order_does_not_change_mapped_discriminator_frequencies(self):
+        mapped = []
+        for ids in ([15, 51, 72], [72, 15, 51]):
+            _, error, _, _, events, run = self.compare(
+                ids, [15, 15, 51, 72, -1],
+                {15: ['correct'] + ['incorrect'] * 4,
+                 51: ['correct'] * 4 + ['incorrect'],
+                 72: ['correct'] * 2 + ['incorrect'] * 3,
+                 -1: ['incorrect'] * 5})
+            self.assertIsNone(error)
+            aggregate = next(e for e in events if e['event'] == 'discriminator_aggregate')
+            mapped.append({cid: aggregate['p_vlm_before_bias'][key][0]
+                           for key, cid in aggregate['internal_key_to_candidate_id'].items()})
+            manifest = json.loads((run.root / 'run.json').read_text())
+            self.assertEqual(manifest['discriminator_aggregation'], 'candidate_local_responses_v1')
+        self.assertEqual(mapped[0], {15: 0.2, 51: 0.8, 72: 0.4, -1: 1.0})
+        self.assertEqual(mapped[0], mapped[1])
+
+    def test_candidate_local_fix_avoids_order_induced_decision_flip(self):
+        result, error, _, calls, events, _ = self.compare(
+            [15, 51], [15, 15, 15, 51, 51],
+            {15: ['correct'] + ['incorrect'] * 4,
+             51: ['correct'] + ['incorrect'] * 4,
+             -1: ['correct'] * 5})
+        self.assertIsNone(error)
+        self.assertEqual(len(calls), 20)
+        self.assertEqual(result, 15)
+        aggregate = next(e for e in events if e['event'] == 'discriminator_aggregate')
+        self.assertEqual(aggregate['counts_used'], {'0': 1, '1': 1, '-1': 0})
+
+    def test_failed_later_candidate_cannot_inherit_earlier_responses(self):
+        _, error, _, _, events, _ = self.compare(
+            [15, 51], [15, 15, 51, 51, -1],
+            {15: ['correct'] * 5,
+             51: [RuntimeError('mock failure')] + ['incorrect'] * 4,
+             -1: ['incorrect'] * 5})
+        self.assertIsNone(error)
+        score = next(e for e in events if e['event'] == 'discriminator_candidate_score' and e['candidate_id'] == 51)
+        self.assertEqual(score['correct_count_used'], 0)
+        self.assertEqual(score['denominator_used'], 5)
+        self.assertEqual(len(score['new_sample_ids']), 4)
+        self.assertEqual(score['new_sample_ids'], score['sample_pool_ids_used_by_current_code'])
+        self.assertTrue(all(s.startswith('d-51-') for s in score['new_sample_ids']))
 
     def test_all_reject_skips_policies(self):
         result, _, _, calls, events, _ = self.compare([15], [-1] * 5, {})

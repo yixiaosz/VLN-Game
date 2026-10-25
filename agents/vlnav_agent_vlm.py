@@ -2,6 +2,7 @@
 import math
 import time
 import os
+import uuid
 
 import torch
 import open3d as o3d
@@ -49,6 +50,7 @@ from PIL import Image, ImageDraw, ImageFont
 from utils.equ_ranking import Equilibrium_Ranking
 # from agents.system_prompt import Instruction_system_prompt
 from agents.objnav_agent import ObjectNav_Agent
+from utils.candidate_images import make_request, read_completed_image, CandidateRenderError
     
 
 
@@ -61,7 +63,7 @@ def encode_image(image_path):
 
 
 class VLObjectNav_Agent(ObjectNav_Agent):
-    def __init__(self, args, follower=None, logger=None) -> None:
+    def __init__(self, args, follower=None, logger=None, candidate_images=None) -> None:
         self.args = args
         if follower != None:
             self.follower = follower
@@ -78,6 +80,9 @@ class VLObjectNav_Agent(ObjectNav_Agent):
         self.candidate_objects = []
         self.image_list = []
         self.episode_trace = None
+        self.candidate_images = candidate_images
+        self.render_run_id = uuid.uuid4().hex
+        self.render_search_count = 0
         
 
     def reset(self) -> None:
@@ -86,6 +91,7 @@ class VLObjectNav_Agent(ObjectNav_Agent):
         self.candidate_objects = []
         self.image_list = []
         self.episode_trace = None
+        self.render_search_count = 0
         
 
         # ------------------------------------------------------------------
@@ -363,6 +369,16 @@ class VLObjectNav_Agent(ObjectNav_Agent):
                 candidate_image_list = []
                 for id in candidate_id:
                     candidate_image_list.append(np.asarray(self.image_list[self.objects[id]['image_idx'][0]]))
+                if self.candidate_images is None:
+                    raise CandidateRenderError('VLM candidate renderer is not configured')
+                self.render_search_count += 1
+                run_id = self.episode_trace.run.run_id if self.episode_trace is not None else self.render_run_id
+                render_requests = [make_request(
+                    self.args.dump_location, self.args.exp_name, run_id, self.episode_n,
+                    self.render_search_count, id, image)
+                    for id, image in zip(candidate_id, candidate_image_list)]
+                for request in render_requests:
+                    self.candidate_images.register(request)
                 receive_queue.put([candidate_image_list, 
                                 depth, 
                                 [] , 
@@ -375,30 +391,27 @@ class VLObjectNav_Agent(ObjectNav_Agent):
                                 [],
                                 [0,0,0],
                                 time_step_info,
-                                candidate_id]
+                                candidate_id,
+                                render_requests]
                                 ) 
                 
                 base64_image_list = []
-                for input_position, id in enumerate(candidate_id):
-                    dump_dir = "{}/{}/episodes".format(self.args.dump_location, self.args.exp_name)
-                    image_filename = '{}/{}/Vis-{}.jpeg'.format(dump_dir, self.episode_n, id)
-                    while True:
-                        if os.path.exists(image_filename) and os.path.getsize(image_filename) > 0:
-                            try:
-                                with open(image_filename, "rb") as image_file:
-                                    image_bytes = image_file.read()
-                                    base64_image_list.append(base64.b64encode(image_bytes).decode("utf-8"))
-                                    print("get image " + str(id) + " in " + str(candidate_id))
-                                    break
-                            except Exception as e:
-                                print(f"Failed to save image: {str(e)}")
-                        else:
-                            time.sleep(0.1)
-                            print("Waiting for the generation.")
+                for input_position, request in enumerate(render_requests):
+                    try:
+                        completion = self.candidate_images.wait(request)
+                        image_bytes = read_completed_image(request, completion)
+                    except CandidateRenderError as exc:
+                        if search_trace is not None:
+                            search_trace.emit('image_render_error', candidate_id=request.candidate_id,
+                                              request_id=request.request_id, error=str(exc))
+                        raise
+                    base64_image_list.append(base64.b64encode(image_bytes).decode("utf-8"))
 
                     if search_trace is not None:
                         # Archive the same buffer encoded above, never re-read the GUI file.
-                        search_trace.archive_image(id, input_position, image_filename, image_bytes)
+                        search_trace.archive_image(request.candidate_id, input_position, request.path,
+                                                   image_bytes, render_completion=completion)
+                self.candidate_images.check_open()
                                             
                 if self.args.vln_mode == "vlm":
                     candidate_index = self.equ_ranking.generator_search(base64_image_list, candidate_id)

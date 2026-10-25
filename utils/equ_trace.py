@@ -50,7 +50,7 @@ def source_identity():
     identity = {'sha256': {}}
     for name in ('utils/equ_ranking.py', 'utils/equ_trace.py', 'utils/equ_report.py', 'utils/chat_utils.py',
                  'agents/vlnav_agent_vlm.py', 'agents/system_prompt.py',
-                 'main_vln.py', 'utils/vis_gui.py', 'configs/mapping_base.yaml',
+                 'main_vln.py', 'utils/vis_gui.py', 'utils/vis.py', 'utils/candidate_images.py', 'configs/mapping_base.yaml',
                  'configs/vlobjectnav_hm3d.yaml', 'arguments.py'):
         identity['sha256'][name] = hashlib.sha256((root / name).read_bytes()).hexdigest()
     try:
@@ -73,7 +73,7 @@ class EquilibriumTraceRun:
         self.logger = logger
         manifest = dict(metadata, schema_version=1, run_id=run_id, prompts=prompts,
                         source=source_identity(),
-                        discriminator_aggregation='uncorrected_reference_accumulation',
+                        discriminator_aggregation='candidate_local_responses_v1',
                         nonfinite_encoding='NaN, Infinity, -Infinity are JSON strings',
                         response_scope='Final logical sample returns/errors; internal HTTP retries are not individually recorded')
         with (self.root / 'run.json').open('x') as stream:
@@ -146,7 +146,7 @@ class SearchTrace:
     def emit(self, event, **fields):
         self.episode.emit(event, search_id=self.number, **fields)
 
-    def archive_image(self, candidate_id, input_position, source_path, data):
+    def archive_image(self, candidate_id, input_position, source_path, data, render_completion=None):
         directory = self.episode.directory / 'images'
         directory.mkdir(exist_ok=True)
         path = directory / f'search-{self.number:03d}-input-{input_position:03d}-candidate-{candidate_id}.jpeg'
@@ -156,6 +156,8 @@ class SearchTrace:
                      source_path=str(source_path),
                      archive_path=str(path.relative_to(self.episode.run.root)),
                      sha256=hashlib.sha256(data).hexdigest(), byte_count=len(data))
+        if render_completion is not None:
+            image['render_completion'] = render_completion
         try:
             with Image.open(BytesIO(data)) as decoded:
                 image['dimensions'] = list(decoded.size)

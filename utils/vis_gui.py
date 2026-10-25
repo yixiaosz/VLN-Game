@@ -26,6 +26,8 @@ import cv2
 from PIL import Image, ImageDraw, ImageFont
 
 from utils.compute_similarities import color_by_clip_sim
+from utils.candidate_images import (
+    CandidateRenderError, CandidateRenderCancelled, validate_first_view, publish_candidate)
 
 
 def set_enabled(widget, enable):
@@ -35,8 +37,9 @@ def set_enabled(widget, enable):
 
 class ReconstructionWindow:
 
-    def __init__(self, args, font_id, send_queue, receive_queue):
+    def __init__(self, args, font_id, send_queue, receive_queue, candidate_images=None):
         self.args = args
+        self.candidate_images = candidate_images
 
         self.device = "cuda:{}".format(self.args.gpu_id)
 
@@ -213,6 +216,8 @@ class ReconstructionWindow:
 
     def _on_close(self):
         self.is_done = True
+        if self.candidate_images is not None:
+            self.candidate_images.close()
 
         # if self.is_started:
         print('Saving model to {}...'.format(self.args.path_npz))
@@ -302,7 +307,25 @@ class ReconstructionWindow:
                       point_sum_colors,
                       candidate_id,
                       candidate_image,
-                      episode_n):
+                      episode_n,
+                      request):
+        try:
+            if self.is_done:
+                raise CandidateRenderCancelled('GUI closed before candidate rendering')
+            if request.candidate_id != candidate_id or request.episode_number != episode_n:
+                raise CandidateRenderError('Candidate render packet identity mismatch')
+            validate_first_view(request, candidate_image)
+            if not 0 <= candidate_id < len(objects):
+                raise CandidateRenderError(f'Candidate {candidate_id} is absent from render objects')
+            self._render_top_view_map(objects, point_sum_points, point_sum_colors,
+                                      candidate_id, candidate_image, episode_n, request)
+        except Exception as exc:
+            self.candidate_images.fail(request, exc)
+            self.candidate_id = -1
+            print(f'Candidate rendering failed: {exc}')
+
+    def _render_top_view_map(self, objects, point_sum_points, point_sum_colors,
+                             candidate_id, candidate_image, episode_n, request):
         
         self.widget3d.scene.clear_geometry()
         if self.rgb_pc_box.checked:
@@ -334,14 +357,9 @@ class ReconstructionWindow:
             self.widget3d.look_at(target_position+[0, 0, 0], target_position+[-0.5, 4, 0], [0, 1, 0])
             self.candidate_id = candidate_id
             # print('send_image')
-            while True:
-                try:
-                    self.widget3d.scene.scene.render_to_image(partial(
-                        self.on_image_rendered, episode_n=episode_n,
-                        candidate_id=candidate_id, candidate_image=candidate_image))
-                    break  # 成功后跳出循环
-                except Exception as e:
-                    print(f"Error rendering image, retrying: {e}")
+            self.widget3d.scene.scene.render_to_image(partial(
+                self.on_image_rendered, episode_n=episode_n,
+                candidate_id=candidate_id, candidate_image=candidate_image, request=request))
             
         
     def update_render(self, 
@@ -493,11 +511,11 @@ class ReconstructionWindow:
 
     def on_top_rendered(self, image, episode_n, frame_idx):
         
-        dump_dir = "{}/{}/episodes/{}".format(self.args.dump_location,
+        dump_dir = "{}/{}/episodes/{}/frames".format(self.args.dump_location,
                                     self.args.exp_name, episode_n)
         if not os.path.exists(dump_dir):
             os.makedirs(dump_dir)
-        image_filename = '{}/Vis-{}.jpeg'.format(dump_dir, frame_idx)
+        image_filename = '{}/Frame-{}.jpeg'.format(dump_dir, frame_idx)
         
 
         # # Convert the open3d.cuda.pybind.geometry.Image object to a numpy array
@@ -547,16 +565,23 @@ class ReconstructionWindow:
 
 
 
-    def on_image_rendered(self, image, episode_n, candidate_id, candidate_image):
-        
-        dump_dir = "{}/{}/episodes/{}".format(self.args.dump_location,
-                                    self.args.exp_name, episode_n)
-        if not os.path.exists(dump_dir):
-            os.makedirs(dump_dir)
-        image_filename = '{}/Vis-{}.jpeg'.format(dump_dir, candidate_id)
-        # image_filename = '{}/Vis-{}-{}.png'.format(dump_dir, self.idx, self.candidate_id)
-        s_time = time.time()
+    def on_image_rendered(self, image, episode_n, candidate_id, candidate_image, request):
+        try:
+            if self.is_done:
+                raise CandidateRenderCancelled('GUI closed before candidate image publication')
+            if request.candidate_id != candidate_id or request.episode_number != episode_n:
+                raise CandidateRenderError('Candidate image callback identity mismatch')
+            validate_first_view(request, candidate_image)
+            pil_image = self._compose_candidate_image(image, candidate_id, candidate_image)
+            completion = publish_candidate(request, pil_image)
+            self.candidate_images.complete(request, completion)
+        except Exception as exc:
+            self.candidate_images.fail(request, exc)
+            print(f'Candidate image publication failed: {exc}')
+        finally:
+            self.candidate_id = -1
 
+    def _compose_candidate_image(self, image, candidate_id, candidate_image):
         # Convert the open3d.cuda.pybind.geometry.Image object to a numpy array
         np_image = np.asarray(image)
         resized_image1 = cv2.resize(np_image, (480, 480))
@@ -602,15 +627,7 @@ class ReconstructionWindow:
         # Add text to image
         draw.text(position, str(candidate_id), fill="red", font=font)
 
-        # Save the image using PIL
-        pil_image.save(image_filename)
-        # print(f"Saved screenshot to {image_filename}")
-        c_time = time.time()
-
-        ss_time = c_time - s_time
-        # print(self.candidate_id)
-        # print('render: %.3f秒'%ss_time) 
-        self.candidate_id = -1
+        return pil_image
 
     # Major loop
     def update_main(self):
@@ -639,7 +656,9 @@ class ReconstructionWindow:
         start = time.time()
         while not self.is_done:
             if not self.receive_queue.empty():
-                image_rgb, image_depth, annotated_image, objects, point_sum_points, point_sum_colors, traj, episode_n, plan_path, vis_image, Open3d_goal_pose, time_step_info, candidate_id = self.receive_queue.get()
+                packet = self.receive_queue.get()
+                image_rgb, image_depth, annotated_image, objects, point_sum_points, point_sum_colors, traj, episode_n, plan_path, vis_image, Open3d_goal_pose, time_step_info, candidate_id = packet[:13]
+                render_requests = packet[13] if len(packet) > 13 else None
                 
                 episode_changed = episode_n > self.episode_n
                 if episode_changed:
@@ -714,8 +733,10 @@ class ReconstructionWindow:
                     self.idx += 1
                     
                 else:
-                    
+                    if self.candidate_images is None or render_requests is None or len(render_requests) != len(candidate_id):
+                        raise CandidateRenderError('Candidate render packet has no matching completion channel/requests')
                     for index, i in enumerate(candidate_id):
+                        request = render_requests[index]
                         self.candidate_id = 0
                         gui.Application.instance.post_to_main_thread(
                             self.window, partial(self.render_top_view_map,
@@ -724,10 +745,14 @@ class ReconstructionWindow:
                                 point_sum_colors,
                                 i,
                                 image_rgb[index],
-                                episode_n)
+                                episode_n,
+                                request)
                             )
-                        while (self.candidate_id != -1):
-                            time.sleep(0.01)
+                        try:
+                            self.candidate_images.wait(request)
+                        except CandidateRenderError as exc:
+                            print(f'Candidate render wait ended: {exc}')
+                            break
                         
 
 

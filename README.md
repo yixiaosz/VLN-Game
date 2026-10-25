@@ -60,6 +60,61 @@ Practical notes:
 - Closing the Open3D window stops the run.
 - The full VLM run covers 316 episodes and has API cost. Start with 5 episodes.
 
+### Candidate image delivery
+
+Single-process VLM runs use request-specific candidate images rather than
+polling shared `Vis-<id>.jpeg` files. Ordinary GUI screenshots are written under
+`<dump>/<experiment>/episodes/<episode>/frames/Frame-<frame>.jpeg`; they can have
+different dimensions and are never used as candidate inputs.
+
+Candidate composites are published under:
+
+```text
+<dump>/<experiment>/episodes/<episode>/candidates/<run-id>/search-<search>/candidate-<id>.jpeg
+```
+
+Navigation waits for an explicit completion matching the run, episode, search,
+candidate, and selected first-view hash. A fully written JPEG is published
+atomically, then read once and checked against the completion hash and expected
+960x480 dimensions before encoding for the API. The existing two-panel layout,
+camera/bounding-box settings, and selection of the object's first-view image are
+preserved. Old `Vis-*.jpeg` files are ignored, not deleted or resized.
+
+Render errors stop the affected test with an error instead of substituting an
+image or manufacturing a navigation result. GUI closure cancels pending waits;
+render completion has a 120-second per-image timeout. Traces record the protocol
+`request_scoped_atomic_completion_v1` and each image's completion identity.
+New runs are image-corrected / Discriminator-corrected. Preserve the original
+labels of older image-corrected / Discriminator-uncorrected runs.
+
+### Discriminator aggregation correction (algorithmic)
+
+1. **Bug:** the original response list was shared across candidates. If A received
+   four `correct` responses out of five and B received two, B was scored as
+   `(4 + 2) / 5 = 1.2` instead of `2 / 5 = 0.4`.
+2. **Why fix before reproduction:** a frequency can exceed 1.0. With the 0.05
+   bias and normalization, the example creates a negative policy entry; the
+   subsequent logarithm can produce NaNs. Even in-range contamination can change
+   equilibrium choices and navigation trajectories, invalidating evaluation of
+   the intended algorithm. This inherited source bug does not establish which
+   revision produced the paper's metrics, and correction does not guarantee a
+   higher score or equality with the paper's results.
+3. **Fix:** reset both the response list and its trace sample IDs for each
+   eligible candidate immediately before its five queries. Each score now uses
+   only that candidate's returned batch. Prompts, sampling, bias, equilibrium
+   equations, reject-all branches, fixed-five Discriminator denominator, and
+   invalid-response handling are otherwise preserved. No clamping is added.
+
+The user explicitly approved this correction after lifting the earlier hold.
+New manifests identify it as `candidate_local_responses_v1`; keep historical
+uncorrected archives separately labelled. See `AGENTS.md` for detailed provenance
+and validation.
+
+The GUI annotation helper also uses the supported Supervision bounding-box and
+label APIs, preserving the previous pixels/styles while eliminating the repeated
+`BoxAnnotator.annotate` deprecation warning. This is a separate visualization
+compatibility change; Supervision remains pinned to the installed 0.21.0 setup.
+
 ### VLM-Game trace archive
 
 Single-process `main_vln.py --vln_mode vlm_game` runs automatically create a
@@ -87,13 +142,16 @@ an absent `search_end` or `episode_end` indicates an incomplete operation.
 Archive **the entire run directory alongside `eval.log`**, rather than just the
 mutable GUI image directory. Each archived image is the exact byte buffer
 encoded for the VLM, with its hash, dimensions, source path, and input position.
-Unexpected-sized or unreadable image buffers are preserved and flagged, not
-substituted. This records existing inputs without fixing the known shared-file
-overwrite issue.
+Historical archives can contain unexpected-sized or unreadable buffers; these
+remain preserved and flagged, not substituted or rewritten. New candidate
+requests use the validated completion protocol above, so invalid candidate
+images are rejected before an API call. This corrects the previous shared-file
+overwrite/stale-read issue in the supported single-process VLM path.
 
-The deferred Discriminator accumulation bug is also preserved and exposed:
-batch-local sample IDs and the actual accumulated scoring pool are recorded
-separately. Nonfinite numerical values are represented by the JSON strings
+Discriminator batch-local sample IDs and actual scoring pools are recorded
+separately; new candidate-local pools match their candidate's returned samples.
+Historical traces retain their accumulated pools and numerical anomalies.
+Nonfinite numerical values are represented by the JSON strings
 `"NaN"`, `"Infinity"`, and `"-Infinity"`, with policy diagnostics; no values are
 clamped or repaired. The five logical samples are traced, but internal HTTP
 retry attempts and billed token usage are not individually captured. CLIP,

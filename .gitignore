@@ -1,6 +1,7 @@
 __pycache__
 .vscode
 dump
+/saved_sessions/
 data*
 game_distribution
 vector_env
@@ -14,6 +15,8 @@ test*
 !tests/
 !tests/test_equ_trace.py
 !tests/test_equ_report.py
+!tests/test_candidate_images.py
+!tests/test_vis.py
 saved_pcd
 create*
 visualize*
