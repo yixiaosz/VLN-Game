@@ -119,9 +119,12 @@ python main_vln.py --vln_mode vlm_game --episode_count 5 -v 0
 python main_vln.py --vln_mode vlm_game --episode_count 5 -v 1
 ```
 
-`python demo.py` launches ObjectNav, CLIP language or VLM language modes. It always
-uses the GUI, asks for episode count in every mode and for a model only in VLM
-mode. GUI-close stops the run; manual query and pause/resume controls are preserved.
+`python demo.py` first asks for headless or GUI operation, then ObjectNav, CLIP
+language or VLM language mode. The display choice applies to all three modes:
+headless passes `-v 0` without requiring DISPLAY, while GUI passes `-v 1` and checks
+for desktop access. It asks for episode count in every mode and for a model only
+in VLM mode. The summary confirms the display choice. GUI-close stops a GUI run;
+manual query and pause/resume controls are preserved.
 
 ### Private API configuration
 

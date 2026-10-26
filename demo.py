@@ -114,6 +114,25 @@ def load_models():
     return valid
 
 
+def choose_visualization():
+    while True:
+        clear_screen()
+        print("Display mode")
+        print()
+        print("1) Headless (no window)")
+        print("2) GUI (Open3D)")
+        print("q) Quit")
+        choice = input("\nSelect: ").strip().lower()
+        if choice in {"1", "headless"}:
+            return 0
+        if choice in {"2", "gui"}:
+            return 1
+        if choice in {"q", "quit", "exit"}:
+            return None
+        print("Invalid choice.")
+        input("Press Enter to continue...")
+
+
 def choose_mode():
     while True:
         clear_screen()
@@ -191,7 +210,7 @@ def choose_model(models):
         input("Press Enter to continue...")
 
 
-def show_summary(mode, count, model):
+def show_summary(mode, count, model, visualize):
     clear_screen()
     print("Demo summary")
     print()
@@ -202,7 +221,7 @@ def show_summary(mode, count, model):
         print(f"Episodes: {count}")
     if model is not None:
         print(f"Model:    {model['name']} ({model['id']})")
-    print("GUI:      Open3D")
+    print(f"Display:  {'GUI (Open3D)' if visualize else 'Headless (no window)'}")
 
     if count == -1:
         print()
@@ -216,7 +235,7 @@ def show_summary(mode, count, model):
     return ask_yes_no("Launch? [Y/n]: ", default_yes=True)
 
 
-def build_launch(mode, count, model):
+def build_launch(mode, count, model, visualize):
     env = os.environ.copy()
     gsa = Path(env.get("GSA_PATH", DEFAULT_GSA)).expanduser().resolve()
     if not gsa.is_dir():
@@ -231,7 +250,7 @@ def build_launch(mode, count, model):
     else:
         python = Path(sys.executable)
 
-    if not env.get("DISPLAY"):
+    if visualize and not env.get("DISPLAY"):
         print("DISPLAY is not set.")
         print("Run the launcher from the desktop session with GUI access.")
         return None
@@ -255,7 +274,7 @@ def build_launch(mode, count, model):
         command = [str(python), "main_vln.py"]
         if mode == "clip":
             command.extend(["--vln_mode", "clip"])
-    command.extend(["-v", "1"])
+    command.extend(["-v", str(visualize)])
     if count != -1:
         command.extend(["--episode_count", str(count)])
     return command, env
@@ -282,6 +301,10 @@ def run_demo(mode, command, env):
 
 
 def main():
+    visualize = choose_visualization()
+    if visualize is None:
+        return 0
+
     while True:
         mode = choose_mode()
         if mode is None:
@@ -302,10 +325,10 @@ def main():
                 if model is None:
                     continue
 
-            if not show_summary(mode, count, model):
+            if not show_summary(mode, count, model, visualize):
                 continue
 
-            launch = build_launch(mode, count, model)
+            launch = build_launch(mode, count, model, visualize)
             if launch is None:
                 input("Press Enter to return to the menu...")
                 continue

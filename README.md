@@ -30,7 +30,11 @@ source "$HOME/.config/vlngame/api.env"
 python demo.py
 ```
 
-The launcher provides ObjectNav mode (reference), Language mode: CLIP-based, and Language mode: VLM. It always opens the Open3D GUI, asks for 5/full/custom episode count in every mode, and asks for a model only in VLM mode.
+The launcher's first question selects **Headless (no window)** or **GUI (Open3D)**.
+It then asks for ObjectNav (reference), CLIP-based language, or VLM language mode,
+followed by the 5/full/custom episode count and a model only in VLM mode. The
+display choice applies to every mode and is shown again in the launch summary.
+Headless runs do not require `DISPLAY`; GUI runs require desktop access.
 
 ## ObjectNav demo
 
@@ -82,8 +86,9 @@ reference and camera settings; historical runs keep their original labels.
 
 The installed Open3D 0.18.0 EGL backend works without `DISPLAY`; no dependency
 replacement or software-rendering environment override is needed on this machine.
-`demo.py` remains the interactive GUI launcher; use the direct command above for
-headless runs, after loading the same private API environment as for GUI mode.
+`demo.py` supports both headless and GUI runs; select the display mode at its
+first question. Direct commands remain available. Load the same private API
+environment before VLM runs in either display mode.
 
 Offscreen rendering still uses Filament. Removing GUI callbacks and per-frame
 rendering reduces the workload but does not guarantee absence of native crashes.

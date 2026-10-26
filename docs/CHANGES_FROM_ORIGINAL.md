@@ -470,6 +470,21 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
       That harness-only mismatch is retained, and the separate navigation phase
       compares unchanged task parameters while verifying the actual selected scene.
 
+17. **`demo.py`** — user-approved headless/GUI launcher selection (2026-10-26).
+    - Ask for Headless (no window) or GUI (Open3D) before navigation mode, episode
+      count or model. Apply the selected `-v 0` / `-v 1` to ObjectNav, CLIP and VLM
+      launches and display the choice in the final summary.
+    - Require DISPLAY only for GUI mode. Keep existing entrypoints, model registry
+      and private environment handling, count/back/quit flows and full-run
+      confirmation. No navigation, rendering backend, manual-query/pause controls,
+      evaluation logic, prompts or API payloads changed.
+    - Validation: 13 offline launcher checks using scripted inputs and mocked
+      subprocess launches passed. They cover all six mode/display combinations,
+      all three GUI-without-DISPLAY rejections, initial quit/invalid choices,
+      custom count and the existing default-no full-run confirmation. Headless
+      checks ran without DISPLAY; no navigation process or API call was started.
+      These verify launcher routing, not new simulator/render endurance results.
+
 #### Data compatibility changes
 
 The data were downloaded from [Github](https://github.com/matterport/habitat-matterport-3dresearch).

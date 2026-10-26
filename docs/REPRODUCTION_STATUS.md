@@ -60,7 +60,8 @@ separate approval.
 - Structured traces, derived terminal reports and API attempt diagnostics:
   changes 9, 10 and 14. Required sample failure aborts without partial aggregation.
 - Candidate-only headless VLM with `-v 0`: change 15. Interactive GUI mode remains
-  available with `-v 1`; `demo.py` remains the GUI launcher.
+  available with `-v 1`. Change 17 adds headless/GUI selection as the first
+  `demo.py` question for ObjectNav, CLIP and VLM modes.
 
 Detailed implementation and validation evidence lives in the change history,
 not this active-issue list. Parsing-only shape validation/regeneration is approved

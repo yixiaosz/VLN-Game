@@ -92,8 +92,8 @@ python main_vln.py --vln_mode vlm_game --episode_count 5 -v 0
 ```
 
 For VLM, `-v 0` is candidate-only headless rendering, with no DISPLAY needed;
-`-v 1` uses the GUI. `demo.py` always launches the GUI and selects a registry
-model. Direct CLI runs require effective `VLN_*` settings, not just `VLN_MODELS`;
+`-v 1` uses the GUI. `demo.py` asks headless/GUI first and selects a registry
+model for VLM mode. Direct CLI runs require effective `VLN_*` settings, not just `VLN_MODELS`;
 see [API configuration](docs/LOCAL_SETUP.md#private-api-configuration).
 
 Check environment/model/data loading and completed episode metrics in smoke runs.
