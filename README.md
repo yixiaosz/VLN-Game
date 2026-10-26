@@ -2,7 +2,10 @@
 
 This fork reproduces the VLN-Game algorithm for local experimentation on Habitat/HM3D. The ObjectNav pipeline is the reference check for the environment, perception, mapping, and GUI. The language-goal VLM game is the main focus.
 
-See [AGENTS.md](AGENTS.md) for the full local setup, dependency versions, data layout, and the list of compatibility changes.
+See [AGENTS.md](AGENTS.md) for agent rules and document maintenance,
+[local setup](docs/LOCAL_SETUP.md) for dependencies/data/API configuration,
+[change history](docs/CHANGES_FROM_ORIGINAL.md) for approved corrections, and
+[reproduction status](docs/REPRODUCTION_STATUS.md) for current blockers and results.
 
 ## Before running
 
@@ -47,11 +50,13 @@ For Language mode: CLIP-based, run `python main_vln.py --vln_mode clip --episode
 
 `main_vln.py` parses the instruction, builds the object-centric map, proposes CLIP candidates, and runs the generator/discriminator equilibrium search. The default mode is `vlm_game`, which is the paper's game-theoretic mode. Other modes are available through `--vln_mode`.
 
-The Open3D GUI is required for VLM candidate rendering.
+VLM mode supports both the Open3D GUI (`-v 1`) and candidate-only offscreen
+rendering (`-v 0`). Headless mode requires no `DISPLAY` or desktop window.
 
 | Run | Command |
 |---|---|
 | 5 episodes (episodes 1-5) | `python main_vln.py --episode_count 5 -v 1` |
+| 5 episodes, headless | `python main_vln.py --vln_mode vlm_game --episode_count 5 -v 0` |
 | Custom count (example: 10 episodes from #1) | `python main_vln.py --episode_count 10 -v 1` |
 | Full run (316 episodes) | `python main_vln.py -v 1` |
 
@@ -59,6 +64,43 @@ Practical notes:
 
 - Closing the Open3D window stops the run.
 - The full VLM run covers 316 episodes and has API cost. Start with 5 episodes.
+
+### Headless VLM rendering
+
+With `-v 0`, a single persistent Open3D `OffscreenRenderer` renders candidate
+views synchronously on the navigation thread, only when a VLM search needs them.
+There is no interactive window, GUI-update thread, or per-frame GUI screenshot
+rendering. Habitat, mapping, candidate selection, first-view selection, API
+settings, equilibrium equations, and evaluation semantics are preserved.
+
+The offscreen reference is the untouched local GUI's 640x800 scene viewport,
+90-degree vertical field of view, camera offset, clipping bounds, materials,
+white background, and red candidate bounding box. Both paths share the original
+960x480 composite operation. The headless viewport is fixed rather than dependent
+on desktop scaling or window resizing. Manifests record the renderer backend,
+reference and camera settings; historical runs keep their original labels.
+
+The installed Open3D 0.18.0 EGL backend works without `DISPLAY`; no dependency
+replacement or software-rendering environment override is needed on this machine.
+`demo.py` remains the interactive GUI launcher; use the direct command above for
+headless runs, after loading the same private API environment as for GUI mode.
+
+Offscreen rendering still uses Filament. Removing GUI callbacks and per-frame
+rendering reduces the workload but does not guarantee absence of native crashes.
+A synchronous native render has no enforceable Python timeout; the GUI's
+120-second completion wait does not apply. Python rendering/publication errors
+stop the test explicitly with an incomplete episode; native crashes can still
+terminate the process. Completed episode traces are flushed to disk.
+
+Initial validation passed all 68 offline tests and a real three-episode GPT-4o-mini
+headless smoke run in 6m40s. Its 11 API input images and policy checkpoints passed
+an independent audit. GUI/offscreen camera matrices matched exactly in six
+reference renders; small native pixel differences remain, comparable in mean to
+GUI repeat-render variation. The four-hour renderer-only test was cancelled at
+the user's request and replaced with a 100-episode GPT-4o-mini headless run;
+multi-hour stability is not yet established. See the
+[reproduction status](docs/REPRODUCTION_STATUS.md) for outcomes and evidence,
+including the later 70/100-episode headless run stopped by a parsing-structure error.
 
 ### Candidate image delivery
 
@@ -82,7 +124,8 @@ preserved. Old `Vis-*.jpeg` files are ignored, not deleted or resized.
 
 Render errors stop the affected test with an error instead of substituting an
 image or manufacturing a navigation result. GUI closure cancels pending waits;
-render completion has a 120-second per-image timeout. Traces record the protocol
+GUI render completion has a 120-second per-image timeout. Offscreen calls are
+synchronous without an enforceable native deadline. Traces record the protocol
 `request_scoped_atomic_completion_v1` and each image's completion identity.
 New runs are image-corrected / Discriminator-corrected. Preserve the original
 labels of older image-corrected / Discriminator-uncorrected runs.
@@ -107,8 +150,8 @@ labels of older image-corrected / Discriminator-uncorrected runs.
 
 The user explicitly approved this correction after lifting the earlier hold.
 New manifests identify it as `candidate_local_responses_v1`; keep historical
-uncorrected archives separately labelled. See `AGENTS.md` for detailed provenance
-and validation.
+uncorrected archives separately labelled. See the
+[change history](docs/CHANGES_FROM_ORIGINAL.md) for detailed provenance and validation.
 
 The GUI annotation helper also uses the supported Supervision bounding-box and
 label APIs, preserving the previous pixels/styles while eliminating the repeated
@@ -121,7 +164,7 @@ Supported parsing/Generator/Discriminator calls keep the existing OpenAI SDK and
 Requests clients, with explicit 10-second connection and 90-second read-inactivity
 timeouts. A shared, finite loop allows at most three application attempts, with
 2/4-second retry delays and Retry-After capped at 30 seconds. Transient HTTP,
-connection, decoding, and existing model-syntax validation failures consume this
+connection, decoding, model-syntax and instruction-parsing structure failures consume this
 budget; permanent request/authentication/configuration errors fail immediately.
 
 HTTP status and response structure are checked before content extraction. Trace
@@ -142,6 +185,19 @@ a server continuously sending bytes. Interrupts stop peer retry loops before
 executor shutdown, but cannot forcibly cancel an active HTTP thread. SDK-internal
 connection retries are not individually traced. This is intentionally a focused
 reliability patch rather than a new asynchronous transport/cancellation framework.
+
+Instruction parsing also checks that the decoded value is a dictionary with a
+string `target` and, when present, a list containing only string `landmark` entries.
+Invalid shapes are labelled `parsing_structure` and regenerate the same request
+within the existing three-attempt budget. Values are never flattened, dropped or
+coerced; missing/empty landmark lists and valid response text retain their behavior.
+Manifests identify this as `target_string_optional_landmark_string_list_v1`.
+See [change 16](docs/CHANGES_FROM_ORIGINAL.md) and the
+[current verification status](docs/REPRODUCTION_STATUS.md).
+The exact archived episode-71 malformed response was rejected and recovered via
+a live retry; a separate natural-provider replay of that dataset episode then
+completed successfully. This targeted check does not complete the stopped
+100-episode benchmark.
 
 ### VLM-Game trace archive
 

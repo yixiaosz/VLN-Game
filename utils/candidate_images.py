@@ -9,11 +9,28 @@ import re
 import tempfile
 import threading
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+import cv2
+import numpy as np
 
 
 PROTOCOL = 'request_scoped_atomic_completion_v1'
 RENDER_TIMEOUT_SECONDS = 120.0
+
+
+def compose_candidate_image(image, candidate_id, candidate_image):
+    """Original GUI composite, shared by GUI and offscreen candidate rendering."""
+    resized_image1 = cv2.resize(np.asarray(image), (480, 480))
+    resized_image2 = cv2.resize(np.asarray(candidate_image), (480, 480))
+    pil_image = Image.fromarray(np.hstack((resized_image1, resized_image2)))
+    draw = ImageDraw.Draw(pil_image)
+    try:
+        font = ImageFont.truetype('arial.ttf', 40)
+    except IOError:
+        font = ImageFont.load_default(40)
+    draw.rectangle([0, 0, 51, 51], fill='white')
+    draw.text((3, 3), str(candidate_id), fill='red', font=font)
+    return pil_image
 
 
 class CandidateRenderError(RuntimeError):

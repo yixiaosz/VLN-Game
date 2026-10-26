@@ -404,6 +404,8 @@ def episode_report(path):
     if api.get('transport'):
         report.add('API transport settings: ' + display(api['transport']))
     report.add('Candidate image protocol: ' + display(manifest.get('candidate_image_protocol')))
+    if manifest.get('candidate_renderer'):
+        report.add('Candidate renderer: ' + display(manifest['candidate_renderer']))
     report.heading('EPISODE OUTCOME')
     report.add('Environment steps: ' + display(end.get('steps')))
     report.add('Recorded metrics: ' + display(end.get('metrics')))

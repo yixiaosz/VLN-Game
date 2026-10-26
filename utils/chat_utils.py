@@ -154,10 +154,16 @@ def _run_chat_request(request, model, role, json_mode, attempt_observer, cancel_
             content = request(details)
             if json_mode:
                 try:
-                    ast.literal_eval(content)  # Preserve the existing content parser.
+                    parsed = ast.literal_eval(content)  # Preserve the existing content parser.
                 except (SyntaxError, ValueError):
                     details['model_content_preview'] = _safe_preview(content)
                     raise _ResponseError('model_content') from None
+                if role == 'parsing' and (
+                        not isinstance(parsed, dict) or not isinstance(parsed.get('target'), str)
+                        or not isinstance(parsed.get('landmark', []), list)
+                        or not all(isinstance(item, str) for item in parsed.get('landmark', []))):
+                    details['model_content_preview'] = _safe_preview(content)
+                    raise _ResponseError('parsing_structure')
         except (requests.RequestException, OpenAIError, ValueError) as exc:
             if isinstance(exc, OpenAIError):
                 details.update(_http_details(getattr(exc, 'http_status', None),
@@ -251,6 +257,7 @@ def trace_configuration():
     url = urlsplit(api_base)
     safe_base = urlunsplit((url.scheme, url.netloc.rsplit('@', 1)[-1], url.path, '', ''))
     return {'api_base': safe_base, 'supports_temperature': supports_temperature,
+            'parsing_output_validation': 'target_string_optional_landmark_string_list_v1',
             'requests': configurations,
             'transport': {'protocol': 'http_timeouts_bounded_attempts_v1',
                           'connect_timeout_seconds': API_TIMEOUT[0], 'read_timeout_seconds': API_TIMEOUT[1],

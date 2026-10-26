@@ -177,6 +177,61 @@ class APITests(unittest.TestCase):
         sleep.assert_not_called()
         self.assertNotIn('test-secret-value', str(caught.exception) + json.dumps(self.events))
 
+    def test_episode_71_parsing_structure_retries_same_request_without_repair(self):
+        # Exact raw content from the stopped run, including its whitespace.
+        bad = '{\n    "target": "couch",\n    "landmark": [\n        "table",\n        "flower vase",\n    []\n]  \n}'
+        good = '{"target":"couch","landmark":["table","flower vase"]}'
+        replies = [SimpleNamespace(choices=[SimpleNamespace(message={'content': text})]) for text in (bad, good)]
+        with patch.object(chat.openai.ChatCompletion, 'create', side_effect=replies) as create, \
+                patch.object(chat.time, 'sleep') as sleep, redirect_stdout(StringIO()):
+            self.assertEqual(chat.chat_with_gpt(self.history, attempt_observer=self.observer), good)
+        self.assertEqual(create.call_count, 2)
+        self.assertEqual(create.call_args_list[0], create.call_args_list[1])
+        sleep.assert_called_once_with(2.)
+        retry = next(e for e in self.events if e.get('status') == 'retry')
+        self.assertEqual(retry['error_category'], 'parsing_structure')
+        self.assertEqual(retry['model_content_preview'], bad)
+        self.assertEqual(self.events[-1]['status'], 'returned')
+
+    def test_invalid_parsing_structures_exhaust_existing_attempt_budget(self):
+        invalid = ['[]', '{}', '{"target":None}', '{"target":4}', '{"target":[]}',
+                   '{"target":"couch","landmark":"table"}',
+                   '{"target":"couch","landmark":None}',
+                   '{"target":"couch","landmark":{}}',
+                   '{"target":"couch","landmark":["table",[]]}',
+                   '{"target":"couch","landmark":[4]}']
+        for content in invalid:
+            with self.subTest(content=content):
+                self.events.clear()
+                reply = SimpleNamespace(choices=[SimpleNamespace(message={'content': content})])
+                with patch.object(chat.openai.ChatCompletion, 'create', return_value=reply) as create, \
+                        patch.object(chat.time, 'sleep') as sleep, redirect_stdout(StringIO()):
+                    with self.assertRaisesRegex(chat.APIRequestError, '3 application attempt.*parsing_structure'):
+                        chat.chat_with_gpt(self.history, attempt_observer=self.observer)
+                self.assertEqual(create.call_count, 3)
+                self.assertEqual([call.args[0] for call in sleep.call_args_list], [2., 4.])
+                self.assertEqual(self.events[-1]['status'], 'failed')
+
+    def test_valid_parsing_shapes_return_original_content_without_extra_restrictions(self):
+        valid = ['{"target":"couch"}', '{"target":"couch","landmark":[]}',
+                 '{"target":"couch","landmark":["table","flower vase"]}',
+                 '{"target":"couch","landmark":[""],"extra":[]}', '{"target":""}']
+        for content in valid:
+            with self.subTest(content=content):
+                reply = SimpleNamespace(choices=[SimpleNamespace(message={'content': content})])
+                with patch.object(chat.openai.ChatCompletion, 'create', return_value=reply) as create, \
+                        patch.object(chat.time, 'sleep') as sleep, redirect_stdout(StringIO()):
+                    self.assertEqual(chat.chat_with_gpt(self.history), content)
+                create.assert_called_once()
+                sleep.assert_not_called()
+
+    def test_parsing_structure_validation_does_not_change_generator_validation(self):
+        # Generator retains syntax-only validation; downstream object_id semantics
+        # are a separate decision from the approved parsing-only correction.
+        with patch.object(chat.requests, 'post', return_value=response(content='[]')) as post:
+            self.assertEqual(self.invoke(), '[]')
+        post.assert_called_once()
+
     def test_discriminator_words_and_model_options_keep_existing_semantics(self):
         with patch.dict(chat.os.environ, {'VLN_MODEL_OPTIONS': '{"max_tokens":222,"temperature":0.7}'}), \
                 patch.object(chat.requests, 'post', return_value=response(content='maybe')) as post:

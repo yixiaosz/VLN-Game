@@ -14,8 +14,6 @@ from tqdm import tqdm, trange
 import imageio
 import threading
 from multiprocessing import Process, Queue
-# Gui
-import open3d.visualization.gui as gui
 
 import sys
 sys.path.append(".")
@@ -26,7 +24,6 @@ from arguments import get_args
 from habitat.config.default import get_config
 from utils.shortest_path_follower import ShortestPathFollowerCompat
 from utils.task import VLObjectNavEpisode
-from utils.vis_gui import ReconstructionWindow
 from agents.vlnav_agent_vlm import VLObjectNav_Agent
 from habitat.utils.visualizations import maps
 from utils.equ_trace import EquilibriumTraceRun
@@ -46,7 +43,7 @@ def transform_rgb_bgr(image):
     return image[:, :, [2, 1, 0]]
 
 # def generate_point_cloud(window):
-def main(args, send_queue, receive_queue, candidate_images=None):
+def main(args, send_queue, receive_queue, candidate_images=None, candidate_renderer=None):
     args.exp_name = "vlobjectnav-"+ args.vln_mode# + "-mini"
     
     if args.gpt_type == 3:
@@ -83,7 +80,8 @@ def main(args, send_queue, receive_queue, candidate_images=None):
         env._sim, 0.1, False
     )
 
-    agent = VLObjectNav_Agent(args, follower, logging, candidate_images=candidate_images)
+    agent = VLObjectNav_Agent(args, follower, logging, candidate_images=candidate_images,
+                             candidate_renderer=candidate_renderer)
 
     agg_metrics: Dict = defaultdict(float)
 
@@ -99,7 +97,9 @@ def main(args, send_queue, receive_queue, candidate_images=None):
                       'config_seed': config.SEED, 'argument_seed': args.seed,
                       'visualize': args.visualize, 'task_config': str(config),
                       'candidate_image_protocol': CANDIDATE_IMAGE_PROTOCOL,
-                      'candidate_render_timeout_seconds': RENDER_TIMEOUT_SECONDS,
+                      'candidate_render_timeout_seconds': RENDER_TIMEOUT_SECONDS if candidate_renderer is None else None,
+                      'candidate_renderer': candidate_renderer.configuration() if candidate_renderer is not None
+                                            else {'backend': 'open3d_gui'},
                       'api_configuration': trace_configuration()},
             {'parsing': Parsing_prompt, 'generator': generator_prompt,
              'discriminator': discriminator_prompt}, logging)
@@ -241,6 +241,9 @@ def main(args, send_queue, receive_queue, candidate_images=None):
 
 
 def visualization_thread(send_queue, receive_queue, candidate_images=None):
+    import open3d.visualization.gui as gui
+    from utils.vis_gui import ReconstructionWindow
+
     app_win = None
     try:
         app = gui.Application.instance
@@ -265,9 +268,10 @@ if __name__ == "__main__":
 
     send_queue = Queue()
     receive_queue = Queue()
-    candidate_images = CandidateImageRequests() if 'vlm' in args.vln_mode else None
+    candidate_images = CandidateImageRequests() if args.visualize and 'vlm' in args.vln_mode else None
+    candidate_renderer = None
 
-    gui_started = bool(args.visualize or 'vlm' in args.vln_mode)
+    gui_started = bool(args.visualize)
     if gui_started:
         # Create a thread for the Open3D visualization
         visualization = threading.Thread(target=visualization_thread, args=(send_queue, receive_queue, candidate_images))
@@ -276,17 +280,22 @@ if __name__ == "__main__":
     # Run ROS code in the main thread
     exit_code = 0
     try:
-        main(args, send_queue, receive_queue, candidate_images)
+        if not gui_started and 'vlm' in args.vln_mode:
+            from utils.candidate_renderer import CandidateRenderer
+            candidate_renderer = CandidateRenderer()
+        main(args, send_queue, receive_queue, candidate_images, candidate_renderer)
     except KeyboardInterrupt:
-        if candidate_images is None:
-            raise
-        candidate_images.request_gui_close()
+        if candidate_images is not None:
+            candidate_images.request_gui_close()
         exit_code = 130
     except Exception:
         logging.exception('Test stopped on error; incomplete episode was not counted')
         if candidate_images is not None:
             candidate_images.request_gui_close()
         exit_code = 1
+    finally:
+        if candidate_renderer is not None:
+            candidate_renderer.close()
 
     if gui_started:
         visualization.join()
@@ -294,3 +303,4 @@ if __name__ == "__main__":
         sys.stderr.flush()
         logging.shutdown()
         os._exit(exit_code)
+    sys.exit(exit_code)

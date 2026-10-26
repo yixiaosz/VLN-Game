@@ -51,7 +51,8 @@ def source_identity():
     identity = {'sha256': {}}
     for name in ('utils/equ_ranking.py', 'utils/equ_trace.py', 'utils/equ_report.py', 'utils/chat_utils.py',
                  'agents/vlnav_agent_vlm.py', 'agents/system_prompt.py',
-                 'main_vln.py', 'utils/vis_gui.py', 'utils/vis.py', 'utils/candidate_images.py', 'configs/mapping_base.yaml',
+                 'main_vln.py', 'utils/vis_gui.py', 'utils/vis.py', 'utils/candidate_images.py',
+                 'utils/candidate_renderer.py', 'configs/mapping_base.yaml',
                  'configs/vlobjectnav_hm3d.yaml', 'arguments.py'):
         identity['sha256'][name] = hashlib.sha256((root / name).read_bytes()).hexdigest()
     try:

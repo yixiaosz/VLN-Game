@@ -27,7 +27,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from utils.compute_similarities import color_by_clip_sim
 from utils.candidate_images import (
-    CandidateRenderError, CandidateRenderCancelled, validate_first_view, publish_candidate)
+    CandidateRenderError, CandidateRenderCancelled, validate_first_view, publish_candidate,
+    compose_candidate_image)
 
 
 def set_enabled(widget, enable):
@@ -582,52 +583,7 @@ class ReconstructionWindow:
             self.candidate_id = -1
 
     def _compose_candidate_image(self, image, candidate_id, candidate_image):
-        # Convert the open3d.cuda.pybind.geometry.Image object to a numpy array
-        np_image = np.asarray(image)
-        resized_image1 = cv2.resize(np_image, (480, 480))
-        
-        candidate_image = np.asarray(candidate_image)
-        resized_image2 = cv2.resize(candidate_image, (480, 480))
-        
-        # Combine images horizontally
-        combined_image = np.hstack((resized_image1, resized_image2))
-        
-        # Convert the numpy array to a PIL Image object
-        pil_image = Image.fromarray(combined_image)
-        
-        # add the number on the image
-        # Initialize drawing context
-        draw = ImageDraw.Draw(pil_image)
-        # Define the text to be added and its position
-        font_size = 40
-
-        try:
-            # Attempt to use a truetype font if available
-            font = ImageFont.truetype("arial.ttf", font_size)
-        except IOError:
-            # If the truetype font is not available, use the default PIL font
-            font = ImageFont.load_default(font_size)
-
-        # Calculate text size to center it
-        # bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = 45
-        text_height = 45
-        padding = 3
-        position = (3, 3)  # Adjust position as needed
-
-        # Define the rectangle coordinates
-        rect_x0 = position[0] - padding
-        rect_y0 = position[1] - padding
-        rect_x1 = position[0] + text_width + padding
-        rect_y1 = position[1] + text_height + padding
-
-        # Draw the white rectangle
-        draw.rectangle([rect_x0, rect_y0, rect_x1, rect_y1], fill="white")
-
-        # Add text to image
-        draw.text(position, str(candidate_id), fill="red", font=font)
-
-        return pil_image
+        return compose_candidate_image(image, candidate_id, candidate_image)
 
     # Major loop
     def update_main(self):
