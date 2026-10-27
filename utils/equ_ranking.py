@@ -227,13 +227,14 @@ class Equilibrium_Ranking():
         response_ids = []
         cancel = threading.Event()
         batch_error = None
+        request_options = {'allowed_ids': {str(cid) for cid in self.candidate_id} | {'-1'}} if validate_ids else {}
         if self.trace is not None:
             self.trace.emit('query_batch', role='generator', requested_samples=num_samples,
                             input_positions=list(range(len(self.candidate_id))))
         with concurrent.futures.ThreadPoolExecutor() as executor, _stop_retries_on_exit(cancel):
             future_to_message = {executor.submit(chat_with_gpt4v, chat_history,
                                   attempt_observer=self._attempt_observer(f'g-{n + 1}'),
-                                  cancel_event=cancel): (chat_history, f'g-{n + 1}') for n in range(num_samples)}
+                                  cancel_event=cancel, **request_options): (chat_history, f'g-{n + 1}') for n in range(num_samples)}
             for completion_order, future in enumerate(concurrent.futures.as_completed(future_to_message), 1):
                 prompt, sample_id = future_to_message[future]
                 try:

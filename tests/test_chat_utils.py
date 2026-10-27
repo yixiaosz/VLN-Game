@@ -80,6 +80,42 @@ class APITests(unittest.TestCase):
         self.assertEqual(failed['request_id'], 'unit-request')
         self.assertEqual(failed['body_preview'], '')
 
+    def test_unoffered_generator_id_retries_identical_request_and_returns_one_sample(self):
+        with patch.object(chat.requests, 'post', side_effect=[response(content='{"object_id":"4"}'),
+                                                             response(content='{"object_id":"18"}')]) as post, \
+                patch.object(chat.time, 'sleep') as sleep:
+            self.assertEqual(self.invoke(allowed_ids={'0', '3', '18', '19', '21', '-1'}), '{"object_id":"18"}')
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args_list[0], post.call_args_list[1])
+        self.assertNotIn('allowed_ids', post.call_args.kwargs['json'])
+        sleep.assert_called_once_with(2.)
+        self.assertEqual(self.events[1]['error_category'], 'candidate_id')
+        self.assertEqual(self.events[1]['model_content_preview'], '{"object_id":"4"}')
+        self.assertEqual(self.events[-1]['status'], 'returned')
+
+    def test_invalid_generator_ids_exhaust_shared_budget_without_coercion(self):
+        for content in ('{"object_id":"4"}', '{"object_id":18}', '{}', '[]'):
+            with self.subTest(content=content):
+                with patch.object(chat.requests, 'post', side_effect=lambda *a, **k: response(content=content)) as post, \
+                        patch.object(chat.time, 'sleep') as sleep:
+                    with self.assertRaisesRegex(chat.APIRequestError, '3 application attempt.*candidate_id'):
+                        self.invoke(allowed_ids={'18', '-1'})
+                self.assertEqual(post.call_count, 3)
+                self.assertEqual([c.args[0] for c in sleep.call_args_list], [2., 4.])
+
+    def test_transport_and_candidate_id_errors_share_one_three_attempt_budget(self):
+        with patch.object(chat.requests, 'post', side_effect=[requests.ReadTimeout('synthetic'),
+                response(content='{"object_id":"4"}'), response(content='{"object_id":"4"}')]) as post, \
+                patch.object(chat.time, 'sleep'):
+            with self.assertRaisesRegex(chat.APIRequestError, '3 application attempt'):
+                self.invoke(allowed_ids={'18', '-1'})
+        self.assertEqual(post.call_count, 3)
+
+    def test_game_generator_without_allowed_ids_keeps_legacy_acceptance(self):
+        with patch.object(chat.requests, 'post', return_value=response(content='{"object_id":"4"}')) as post:
+            self.assertEqual(self.invoke(), '{"object_id":"4"}')
+        post.assert_called_once()
+
     def test_http_status_is_checked_before_json(self):
         bad = response(502, body='<html>Bad gateway</html>', headers={'Content-Type': 'text/html'})
         with patch.object(chat.requests, 'post', side_effect=[bad, response()]) as post, \

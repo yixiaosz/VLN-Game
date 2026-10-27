@@ -529,6 +529,54 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
       `20261027-deepseek-generator-smoke/` and `20261027-deepseek-ranking-smoke/`
       under the same smoke_tests directory. No detector, prompt, rendering camera,
       model stack, navigation threshold, dataset or evaluation change was made.
+    - Later full Generator attempt (same day, commit `1eb0267`): stopped after
+      5/316 completed episodes at episode 6/search 4. Offered IDs `[0,3,18,19,21]`,
+      returned string ID `"4"` (HTTP 200). The baseline-only fail-fast membership
+      guard raised outside the API retry loop; no aggregation or semantic-ID
+      regeneration occurred. This was an explicit validation stop, not a native
+      crash. The short smokes did not encounter this response; offline invalid-ID
+      tests intentionally verified this abort policy. Evidence remains in
+      `saved_sessions/20261027-deepseek-v4.1-flash-generator-headless-316ep/`.
+      A bounded regeneration follow-up is proposed separately; no failed sample
+      was repaired/relabelled and no automatic restart was performed.
+
+19. **`utils/chat_utils.py`, `utils/equ_ranking.py`, `main_vln.py`,
+    `tests/test_chat_utils.py`, `tests/test_generator_baselines.py`** — user-approved
+    bounded candidate-ID regeneration for Generator/Ranking (2026-10-27).
+    - The first full Generator run stopped after 5/316 episodes because the model
+      returned string `"4"` for offered `[0,3,18,19,21]`. Change 18's semantic guard
+      was outside the API retry loop, so it failed fast despite HTTP 200 and valid
+      syntax. That stopped-run archive remains unchanged and separately labelled.
+    - Baseline batches now pass an optional `allowed_ids` set to the existing
+      vision client. Within its existing JSON validation stage, an invalid shape,
+      missing/non-string ID or unoffered ID raises retryable `candidate_id` with
+      the original bounded sanitized preview. The same prompt/images/options are
+      retried within the existing three total application attempts and 2/4-second
+      backoff. Transport, syntax and semantic errors share one budget. No new
+      loop, coercion, ordinal guessing, vote dropping or rejection substitution.
+    - Only final accepted responses enter the one-sample Generator / five-sample
+      Ranking aggregation. Exhaustion aborts without partial metrics/aggregation.
+      The post-return membership guard remains as a defensive check. Game does
+      not opt in (`allowed_ids=None`), so its request/interpretation/math behavior
+      remains unchanged. Manifests label baseline policy
+      `offered_string_id_bounded_retry_v1`; Game records `not_applicable`.
+    - All 84 offline tests passed, including exact invalid-ID recovery, unchanged
+      payload, invalid-type/shape exhaustion, shared timeout/ID budget, legacy
+      Game acceptance and six HTTP attempts still yielding only five Ranking votes.
+      Five before/after Game comparisons still match requests, decisions/errors
+      and checkpoint arrays; Game core method ASTs remain unchanged.
+    - Static online smoke reconstructed the exact failed five-image request from
+      archived JPEG buffers, original instruction/prompt, direct DeepSeek model
+      settings and timeouts. Attempt 1 explicitly replayed the archived `"4"`
+      response; attempt 2 called the real provider with unchanged payload and
+      returned ID 18. Exactly one logical Generator response/vote was aggregated.
+      There was no Habitat/navigation/rendering or Discriminator/equilibrium work.
+      The injection is labelled, not attributed as a new provider failure.
+      Evidence: `saved_sessions/smoke_tests/20261027-baseline-id-retry-static/`.
+    - The user authorized restarting the same full headless DeepSeek Generator
+      configuration after commit/push, with manual `sleep 1800`/check monitoring
+      instead of hourly checks. It starts from the normal iterator beginning,
+      without skipping episodes or merging the failed attempt's metrics.
 
 #### Data compatibility changes
 

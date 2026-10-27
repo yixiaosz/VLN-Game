@@ -99,6 +99,8 @@ def main(args, send_queue, receive_queue, candidate_images=None, candidate_rende
                                           'vlm_game': 'equilibrium_search_v1'}[args.vln_mode],
                       'generator_samples': 1 if args.vln_mode == 'vlm' else 5,
                       'discriminator_enabled': args.vln_mode == 'vlm_game',
+                      'baseline_id_validation': ('offered_string_id_bounded_retry_v1'
+                                                 if args.vln_mode in ('vlm', 'vlm_rank') else 'not_applicable'),
                       'config_seed': config.SEED, 'argument_seed': args.seed,
                       'visualize': args.visualize, 'task_config': str(config),
                       'candidate_image_protocol': CANDIDATE_IMAGE_PROTOCOL,

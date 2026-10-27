@@ -98,6 +98,8 @@ see [API configuration](docs/LOCAL_SETUP.md#private-api-configuration).
 VLM methods remain independently selectable: `vlm` = one Generator sample,
 `vlm_rank` = five-sample plurality, `vlm_game` = existing equilibrium (default).
 Baseline ties follow candidate order, with reject last; preserve Game behavior.
+Baseline ID failures share the existing three-attempt request budget (change 19);
+retries regenerate the same request and must not add votes or change Game decoding.
 
 Check environment/model/data loading and completed episode metrics in smoke runs.
 For GUI checks, verify the window and controls; for headless checks, verify the
@@ -110,7 +112,7 @@ python -m unittest discover -s tests -v
 
 Latest recorded state (2026-10-27): CLIP and DeepSeek Game completed 316/316;
 headless mini stopped at 188/316 on an OpenRouter key limit. Generator/Ranking
-are validated (change 18); a full DeepSeek Generator run is authorized next. See the
+are validated (change 18); bounded ID retry (change 19) passed static testing after the 5/316 stop. See the
 [status page](docs/REPRODUCTION_STATUS.md) before choosing next work.
 
 ## Documentation maintenance

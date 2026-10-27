@@ -7,8 +7,10 @@ import unittest
 from unittest.mock import patch
 
 import test_equ_trace as fixtures
+import test_chat_utils as http_fixtures
 from agents.system_prompt import generator_prompt
 from utils import equ_ranking as ranking
+from utils import chat_utils as chat
 from utils.equ_report import episode_report
 from utils.equ_trace import EquilibriumTraceRun
 
@@ -110,6 +112,22 @@ class BaselineTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertIsInstance(error, ranking.APIRequestError)
         self.assertFalse(any(e['event'] == 'generator_aggregate' for e in events))
+
+    def test_ranking_http_retry_does_not_add_a_sixth_logical_vote(self):
+        # Exercise the real HTTP/retry client under the five-sample batch helper.
+        obj = ranking.Equilibrium_Ranking.__new__(ranking.Equilibrium_Ranking)
+        obj.text_description = 'test description'
+        obj.logger = self.fixture.logger
+        responses = [http_fixtures.response(content='{"object_id":"4"}')] + [
+            http_fixtures.response(content='{"object_id":"18"}') for _ in range(5)]
+        with patch.object(chat.requests, 'post', side_effect=responses) as post, \
+                patch.object(chat.time, 'sleep'), patch.object(chat.logging, 'warning'), \
+                patch.object(ranking.concurrent.futures, 'ThreadPoolExecutor', fixtures.ImmediateExecutor), \
+                patch.object(ranking.concurrent.futures, 'as_completed', lambda fs: iter(fs)), \
+                redirect_stdout(StringIO()):
+            selected = obj.generator_search(['synthetic-image'], [0, 3, 18, 19, 21], 5)
+        self.assertEqual(selected, 18)
+        self.assertEqual(post.call_count, 6)
 
 
 if __name__ == '__main__':

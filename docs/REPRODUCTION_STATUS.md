@@ -28,12 +28,25 @@ checks and archival. No background monitoring script was used.
 See [the manual check log](../saved_sessions/hourly-monitoring-20261027.md) and
 [the sealed DeepSeek archive](../saved_sessions/20261027-deepseek-v4.1-flash-headless-316ep/archive-summary.json).
 
-**Next authorized work:** Generator/Ranking implementation and both three-episode
-DeepSeek headless smoke runs have passed (change 18). The user authorized a full
-headless 316-episode DeepSeek Generator run next, with the same manual one-hour
-sleep/check monitoring until it ends, followed by archival. See the corresponding
-`saved_sessions/` launch record for live state; this page does not imply a running
-session before that launch record exists.
+Generator/Ranking implementation and both three-episode DeepSeek headless smoke
+runs passed (change 18) and were pushed as `1eb0267`. The authorized full Generator
+run launched at 16:59 AEDT, then stopped at 17:08:07 after 5/316 completed episodes.
+Episode 6/search 4 offered IDs `[0,3,18,19,21]`; the VLM returned `{"object_id":"4"}`
+with HTTP 200. The baseline-only membership guard aborted before aggregation.
+That guard is outside the request retry loop, so no semantic-ID regeneration
+occurred. This is the documented fail-fast policy triggering, not a renderer
+segfault or recurrence of the old ID/index selection bug. Episode 6 is incomplete
+and excluded. Source/prompt/settings were unchanged, and the run was not restarted.
+The first hourly sleep was interrupted by the user for the 17:21 failure check.
+The user approved change 19: baseline-only invalid-ID validation now occurs inside
+the existing shared three-attempt request budget. A static replay of the exact
+failed request rejected the injected archived ID 4, then a live identical-payload
+retry returned offered ID 18 as one accepted logical sample. All 84 tests and
+before/after Game comparisons passed. The ID is not guessed as an ordinal or
+converted into rejection. A restart with the same full headless DeepSeek Generator
+settings is authorized after commit/push, starting from the normal beginning;
+manual checks will use 30-minute sleeps. This is not a continuation/merge of the
+five completed episodes. See the new launch record for actual running state.
 Completion of an experiment does not establish that the user reviewed or signed
 off on its results; do not infer that approval from these records.
 
@@ -98,7 +111,8 @@ separate approval.
   are independently selectable alongside unchanged/default Game (`vlm_game`):
   change 18 fixes baseline ID selection and adds method-labelled tracing. Ties
   follow candidate order with reject last; invalid baseline IDs abort without
-  changing Game's interpretation. All 79 offline tests and five before/after
+  changing Game's interpretation after the shared budget is exhausted (change 19).
+  All 79 change-18 offline tests and five before/after
   Game comparisons passed. Both DeepSeek baseline smokes completed 3/3 with
   actual exit code 0 and verified images/decisions, not benchmark evidence.
 
@@ -142,6 +156,7 @@ The paper used GPT-4o; GPT-4o-mini results must keep their actual model label.
 | GPT-4o-mini headless target attempt | 70/100 | 0.314286 | 0.108471 | 3.543361 | 22 successes; episode 71 parser error; [validated summary](../saved_sessions/20261026-gpt-4o-mini-vlm-game-headless-100ep/archive-summary.json) |
 | GPT-4o-mini headless full-run attempt, parsing-corrected | 188/316 | 0.292553 | 0.104405 | 4.130340 | 55 successes; episode 189 HTTP 403 key limit; [verified archive](../saved_sessions/20261027-gpt-4o-mini-headless-188of316-key-limit/session.json) |
 | DeepSeek V4.1 Flash Game, direct API/headless | 316/316 | 0.319620 | 0.120965 | 4.640878 | 101 successes; [sealed summary](../saved_sessions/20261027-deepseek-v4.1-flash-headless-316ep/archive-summary.json) |
+| DeepSeek V4.1 Flash Generator, direct API/headless | 5/316 | 0.600 | 0.206 | 2.093 | 3 successes; episode 6 unoffered ID error; [archive](../saved_sessions/20261027-deepseek-v4.1-flash-generator-headless-316ep/README.md) |
 
 Paper Table III's CLIP baseline reports SR 0.253, SPL 0.106, DTG 4.697. The local
 full CLIP run is available for comparison; its completion supersedes old "baseline
@@ -198,6 +213,12 @@ Each smoke's decisions were independently recomputed from the actual votes;
 there were no Discriminator calls or equilibrium updates. The Game preservation
 check compared against the sealed full-run source, including multi-candidate
 checkpoint arrays. No historical archive was modified by baseline implementation.
+
+The [change-19 static regression](../saved_sessions/smoke_tests/20261027-baseline-id-retry-static/README.md)
+records exact ordered-image hashes, unchanged request settings, injected/live
+attempt labels and the accepted ID/vote. It passed without navigation; Game
+comparisons and the 84-test offline suite passed. No claim of resumed or completed
+316-episode Generator metrics follows from that static check.
 
 ## Maintenance
 

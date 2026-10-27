@@ -63,10 +63,11 @@ For Language mode: CLIP-based, run `python main_vln.py --vln_mode clip --episode
 Generator and Ranking share the same images, prompt and navigation pipeline.
 Ranking uses plurality, not a requirement for three votes: ties use the original
 candidate order, with `-1` last (so a tied real candidate wins over rejection).
-Malformed/unknown/non-string IDs abort baseline selection rather than silently
-turning into rejection votes; this baseline-only check does not change Game's
-current interpretation. Transport/model-syntax retries retain their existing
-budget; invalid candidate IDs do not introduce an extra retry loop.
+Malformed/unknown/non-string IDs regenerate the identical baseline request within
+the existing three-attempt budget rather than becoming rejection votes. Transport,
+syntax and candidate-ID errors share that budget; only exhaustion aborts baseline
+selection. This baseline-only opt-in does not change Game's current interpretation,
+and retries do not add logical votes. Manifests record the bounded-ID retry policy.
 
 All three VLM methods archive exact image inputs, raw opinions, API attempts,
 decisions and episode metrics. Generator/Ranking record zero Discriminator calls

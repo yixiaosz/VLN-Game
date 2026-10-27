@@ -141,7 +141,8 @@ def _retry_delay(attempt, details):
     return delay
 
 
-def _run_chat_request(request, model, role, json_mode, attempt_observer, cancel_event=None):
+def _run_chat_request(request, model, role, json_mode, attempt_observer, cancel_event=None,
+                      allowed_ids=None):
     for attempt in range(1, API_MAX_ATTEMPTS + 1):
         if cancel_event is not None and cancel_event.is_set():
             raise APIRequestError(f'{role} API retries cancelled after batch interruption/failure')
@@ -164,6 +165,11 @@ def _run_chat_request(request, model, role, json_mode, attempt_observer, cancel_
                         or not all(isinstance(item, str) for item in parsed.get('landmark', []))):
                     details['model_content_preview'] = _safe_preview(content)
                     raise _ResponseError('parsing_structure')
+                if role == 'generator' and allowed_ids is not None and (
+                        not isinstance(parsed, dict) or not isinstance(parsed.get('object_id'), str)
+                        or parsed['object_id'] not in allowed_ids):
+                    details['model_content_preview'] = _safe_preview(content)
+                    raise _ResponseError('candidate_id')
         except (requests.RequestException, OpenAIError, ValueError) as exc:
             if isinstance(exc, OpenAIError):
                 details.update(_http_details(getattr(exc, 'http_status', None),
@@ -298,7 +304,7 @@ def chat_with_gpt(chat_history, attempt_observer=None, cancel_event=None):
     return _run_chat_request(request, text_model, 'parsing', True, attempt_observer, cancel_event)
 
 def chat_with_gpt4v(chat_history, gpt_type = args.gpt_type, json_mode = True,
-                   attempt_observer=None, cancel_event=None):
+                   attempt_observer=None, cancel_event=None, allowed_ids=None):
     
     model_name = os.environ.get("VLN_MODEL") or gpt_name[gpt_type]
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
@@ -334,7 +340,7 @@ def chat_with_gpt4v(chat_history, gpt_type = args.gpt_type, json_mode = True,
         finally:
             response.close()
     return _run_chat_request(request, model_name, 'generator' if json_mode else 'discriminator',
-                             json_mode, attempt_observer, cancel_event)
+                             json_mode, attempt_observer, cancel_event, allowed_ids)
 
 def chat_with_llama3(user_prompt, chat_history):
 
