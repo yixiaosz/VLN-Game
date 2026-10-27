@@ -485,6 +485,51 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
       checks ran without DISPLAY; no navigation process or API call was started.
       These verify launcher routing, not new simulator/render endurance results.
 
+18. **`utils/equ_ranking.py`, `main_vln.py`, `agents/vlnav_agent_vlm.py`,
+    `utils/equ_trace.py`, `utils/equ_report.py`, `tests/test_generator_baselines.py`**
+    — user-approved non-destructive Generator/Ranking baseline correction and tracing
+    (2026-10-27), after the full DeepSeek Game measurement was archived.
+    - Preserve existing flags/default: `vlm` uses one Generator sample,
+      `vlm_rank` uses five, `vlm_game` remains default and calls the existing
+      equilibrium path. This follows the released code's sample counts and the
+      paper's five-sample Ranking description, not a new ranking prompt.
+    - Correct the inherited baseline wrapper: unpack the helper's ID/probability
+      pair and return the actual object ID, not an index into that pair or array.
+      Reject (`-1`) continues exploration. Ranking selects the plurality winner;
+      first-max ties follow offered candidate order, with rejection appended last.
+      A real candidate therefore wins a tie against rejection. No random tie RNG,
+      majority threshold, extra voting queries or Discriminator was added.
+    - Baseline-only `validate_ids=True` requires a string object_id from the
+      offered IDs or `-1`. Invalid IDs raise before aggregation; they are not
+      dropped/coerced/relabelled as rejection. This semantic check does not add a
+      retry budget. The shared helper defaults validation off, preserving Game's
+      existing model-output interpretation and approved API/parse retry behavior.
+    - Reuse existing trace/image publication infrastructure for `vlm` and
+      `vlm_rank`: raw responses, API attempts, sample counts, vote frequencies,
+      tied options, selected IDs and episode metrics. Manifests identify
+      `generator_single_sample_v1` / `generator_plurality_5_v1`, sample count and
+      `discriminator_enabled=false`; Discriminator aggregation is `not_applicable`.
+      Baseline reports explicitly state zero equilibrium updates, not missing
+      policy data. Existing Game aggregation labels/math remain unchanged.
+    - All 79 offline tests passed. Seven new tests cover actual non-consecutive
+      IDs, one/five sample counts, plurality, ties including reject, invalid IDs,
+      required-sample failure, trace closure and baseline reports. Five controlled
+      before/after Game cases match the sealed full-run source in request roles,
+      image order/counts, decisions/errors and checkpoint arrays. Game search,
+      Discriminator and policy-update/normalization method ASTs are unchanged.
+    - Both natural DeepSeek headless smoke runs completed 3/3 episodes. Generator:
+      8m49s, 7 searches, 13 images, 7 logical Generator samples, 11 application
+      attempts (one retry), 2/3 successes, SPL 0.090145, DTG 3.052540. Ranking:
+      6m24s, 6 searches, 11 images, 30 logical Generator samples, 33 application
+      attempts (no retries), 1/3 successes, SPL 0.088991, DTG 3.414690. Both exit 0;
+      zero Discriminator queries/equilibrium updates. Independent checks verify
+      image/source hashes and recompute every baseline decision from votes.
+      These are functional checks, not evidence of benchmark superiority.
+    - Evidence: `saved_sessions/smoke_tests/20261027-baseline-method-validation/`,
+      `20261027-deepseek-generator-smoke/` and `20261027-deepseek-ranking-smoke/`
+      under the same smoke_tests directory. No detector, prompt, rendering camera,
+      model stack, navigation threshold, dataset or evaluation change was made.
+
 #### Data compatibility changes
 
 The data were downloaded from [Github](https://github.com/matterport/habitat-matterport-3dresearch).

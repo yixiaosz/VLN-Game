@@ -91,9 +91,14 @@ def main(args, send_queue, receive_queue, candidate_images=None, candidate_rende
     print("num_episodes: ", num_episodes)
 
     trace_run = None
-    if args.vln_mode == 'vlm_game':
+    if args.vln_mode in ('vlm', 'vlm_rank', 'vlm_game'):
         trace_run = EquilibriumTraceRun(
             log_dir, {'mode': args.vln_mode, 'requested_episodes': num_episodes,
+                      'decision_method': {'vlm': 'generator_single_sample_v1',
+                                          'vlm_rank': 'generator_plurality_5_v1',
+                                          'vlm_game': 'equilibrium_search_v1'}[args.vln_mode],
+                      'generator_samples': 1 if args.vln_mode == 'vlm' else 5,
+                      'discriminator_enabled': args.vln_mode == 'vlm_game',
                       'config_seed': config.SEED, 'argument_seed': args.seed,
                       'visualize': args.visualize, 'task_config': str(config),
                       'candidate_image_protocol': CANDIDATE_IMAGE_PROTOCOL,

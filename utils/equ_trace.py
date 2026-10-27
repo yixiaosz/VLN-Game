@@ -75,7 +75,8 @@ class EquilibriumTraceRun:
         self.logger = logger
         manifest = dict(metadata, schema_version=1, run_id=run_id, prompts=prompts,
                         source=source_identity(),
-                        discriminator_aggregation='candidate_local_responses_v1',
+                        discriminator_aggregation=('not_applicable' if metadata.get('mode') in ('vlm', 'vlm_rank')
+                                                   else 'candidate_local_responses_v1'),
                         nonfinite_encoding='NaN, Infinity, -Infinity are JSON strings',
                         response_scope='Logical sample returns/errors and application-level API attempts; SDK-internal retries and billed token usage are not individually captured',
                         sample_failure_policy='abort_test_no_partial_batch')

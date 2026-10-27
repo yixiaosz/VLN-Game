@@ -238,6 +238,20 @@ def render_search(report, sid, events, warnings):
     report.heading('2. GENERATOR RESPONSES AND AGGREGATION')
     render_samples(report, events, 'generator')
     gen = first(events, 'generator_aggregate')
+    if parameters.get('method') in ('generator', 'ranking'):
+        report.add('Generator-only selection; Discriminator and equilibrium are not used.')
+        report.add('Actual denominator: ' + display(gen.get('denominator_used')))
+        frequencies = gen.get('p_vlm_all_candidates', {})
+        report.table(['Option', 'Votes', 'Frequency'], [
+            [option(key), gen.get('counts', {}).get(key, 0), value]
+            for key, value in frequencies.items()])
+        selection = first(events, 'generator_selection')
+        report.heading('3. DECISION')
+        report.add('Selected option: ' + option(end.get('selected_candidate_id')))
+        report.add('Tied options: ' + display(selection.get('tied_candidate_ids')))
+        report.add('Tie rule: ' + display(parameters.get('tie_break')))
+        report.add('Equilibrium updates: 0 (not applicable).')
+        return
     if gen:
         report.add('Generator frequencies (sample frequencies, not API confidence scores):')
         report.add('Actual denominator: ' + display(gen.get('denominator_used')))

@@ -117,7 +117,18 @@ python main_vln.py --vln_mode vlm_game --episode_count 5 -v 0
 
 # Interactive VLM GUI
 python main_vln.py --vln_mode vlm_game --episode_count 5 -v 1
+
+# Generator (one sample) / Ranking (five-sample plurality), same API environment
+python main_vln.py --vln_mode vlm --episode_count 5 -v 0
+python main_vln.py --vln_mode vlm_rank --episode_count 5 -v 0
 ```
+
+All three VLM methods use the same headless/GUI image delivery and navigation.
+Generator/Ranking trace their actual sample counts/decisions, with Discriminator
+and equilibrium marked not applicable. Ranking ties follow input candidate order
+with reject (`-1`) last. Their baseline-only ID validation aborts unknown or
+non-string IDs without changing the Game decoder. See change 18 in the history.
+The launcher keeps Game as its VLM default; select baselines through the CLI.
 
 `python demo.py` first asks for headless or GUI operation, then ObjectNav, CLIP
 language or VLM language mode. The display choice applies to all three modes:

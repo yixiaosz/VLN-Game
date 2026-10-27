@@ -54,6 +54,30 @@ For Language mode: CLIP-based, run `python main_vln.py --vln_mode clip --episode
 
 `main_vln.py` parses the instruction, builds the object-centric map, proposes CLIP candidates, and runs the generator/discriminator equilibrium search. The default mode is `vlm_game`, which is the paper's game-theoretic mode. Other modes are available through `--vln_mode`.
 
+| VLM method | Flag | Identification per search |
+|---|---|---|
+| VLN-Generator | `--vln_mode vlm` | One Generator sample; select its actual object ID or reject (`-1`) |
+| VLN-Ranking | `--vln_mode vlm_rank` | Five Generator samples; highest vote count wins |
+| VLN-Game (default) | `--vln_mode vlm_game` | Existing Generator/Discriminator equilibrium search |
+
+Generator and Ranking share the same images, prompt and navigation pipeline.
+Ranking uses plurality, not a requirement for three votes: ties use the original
+candidate order, with `-1` last (so a tied real candidate wins over rejection).
+Malformed/unknown/non-string IDs abort baseline selection rather than silently
+turning into rejection votes; this baseline-only check does not change Game's
+current interpretation. Transport/model-syntax retries retain their existing
+budget; invalid candidate IDs do not introduce an extra retry loop.
+
+All three VLM methods archive exact image inputs, raw opinions, API attempts,
+decisions and episode metrics. Generator/Ranking record zero Discriminator calls
+and zero equilibrium updates, labelled not applicable. Use direct commands to
+choose the baseline; `demo.py`'s VLM option continues to select Game by default.
+
+```bash
+python main_vln.py --vln_mode vlm --episode_count 5 -v 0
+python main_vln.py --vln_mode vlm_rank --episode_count 5 -v 0
+```
+
 VLM mode supports both the Open3D GUI (`-v 1`) and candidate-only offscreen
 rendering (`-v 0`). Headless mode requires no `DISPLAY` or desktop window.
 
@@ -206,7 +230,7 @@ completed successfully. This targeted check does not complete the stopped
 
 ### VLM-Game trace archive
 
-Single-process `main_vln.py --vln_mode vlm_game` runs automatically create a
+Single-process `main_vln.py` runs in `vlm`, `vlm_rank` or `vlm_game` automatically create a
 unique trace directory below `dump/logs/vlobjectnav-vlm_game/traces/` (or the
 corresponding `--dump_location` and experiment name). `eval.log` prints the
 run directory and short references for each episode/search.

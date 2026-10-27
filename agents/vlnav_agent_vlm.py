@@ -424,9 +424,11 @@ class VLObjectNav_Agent(ObjectNav_Agent):
                     self.candidate_images.check_open()
                                             
                 if self.args.vln_mode == "vlm":
-                    candidate_index = self.equ_ranking.generator_search(base64_image_list, candidate_id)
+                    candidate_index = self.equ_ranking.generator_search(base64_image_list, candidate_id,
+                                                                         trace=search_trace)
                 elif self.args.vln_mode == "vlm_rank":
-                    candidate_index = self.equ_ranking.generator_search(base64_image_list, candidate_id, 5)
+                    candidate_index = self.equ_ranking.generator_search(base64_image_list, candidate_id, 5,
+                                                                         trace=search_trace)
                 elif self.args.vln_mode == "vlm_game":
                     candidate_index = self.equ_ranking.equilibrium_search(base64_image_list, candidate_id,
                                                                          trace=search_trace)

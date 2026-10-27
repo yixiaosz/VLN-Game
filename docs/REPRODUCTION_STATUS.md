@@ -1,19 +1,43 @@
 # Reproduction status
 
-Last updated: **2026-10-26**. This page describes the latest recorded outcomes,
+Last updated: **2026-10-27**. This page describes the latest recorded outcomes,
 not live process monitoring. Read [AGENTS.md](../AGENTS.md) for current editing
 rules, [LOCAL_SETUP.md](LOCAL_SETUP.md) for operation and
 [CHANGES_FROM_ORIGINAL.md](CHANGES_FROM_ORIGINAL.md) for approval/history.
 
 ## Current state and next decision
 
-The CLIP-only language baseline completed **316/316** episodes. The latest
-GPT-4o-mini headless VLM attempt completed **70/100**, then exited with code 1
-after **3h11m49s**. The requested 100-episode VLM completion target remains unmet.
+The CLIP-only language baseline and direct-API **DeepSeek V4.1 Flash VLN-Game**
+each completed **316/316** episodes. DeepSeek Game finished with 101 successes,
+SR 0.319620, SPL 0.120965, DTG 4.640878 m, final runtime 14h36m43s. The process
+exited and released the GPU; its actual exit code was not collected by a waiting
+parent. All completion events and final logs are archived and verified. This is
+a DeepSeek-labelled reproduction milestone, not a GPT-4o paper-metric replication.
+A full
+GPT-4o-mini headless VLM attempt completed **188/316**, then stopped on an OpenRouter
+key-level USD 50 total-spend limit during episode 189 (HTTP 403). Its final
+completed episode was logged at 8h24m33s. The failure is archived and verified;
+the limit was not raised and that run was not restarted. GPT-4o-mini's full
+316-episode completion target remains unmet.
+
+The user authorized a separate full headless **DeepSeek V4.1 Flash** run using the
+configured direct DeepSeek API. It started at 01:39 AEDT on 2026-10-27 and completed
+all episodes on the same day. Monitoring used manual one-hour sleeps; user
+discussion explicitly interrupted the final scheduled sleep, followed by direct
+checks and archival. No background monitoring script was used.
+See [the manual check log](../saved_sessions/hourly-monitoring-20261027.md) and
+[the sealed DeepSeek archive](../saved_sessions/20261027-deepseek-v4.1-flash-headless-316ep/archive-summary.json).
+
+**Next authorized work:** Generator/Ranking implementation and both three-episode
+DeepSeek headless smoke runs have passed (change 18). The user authorized a full
+headless 316-episode DeepSeek Generator run next, with the same manual one-hour
+sleep/check monitoring until it ends, followed by archival. See the corresponding
+`saved_sessions/` launch record for live state; this page does not imply a running
+session before that launch record exists.
 Completion of an experiment does not establish that the user reviewed or signed
 off on its results; do not infer that approval from these records.
 
-**Latest stopped-run cause: parsing-output structure, now corrected under change
+**Earlier stopped-run cause: parsing-output structure, now corrected under change
 16.** In episode 71, the model returned:
 
 ```json
@@ -41,9 +65,17 @@ separate approval.
 - **GUI native crash:** the thread/callback fixes passed short checks but did not
   establish endurance. A later GUI run segfaulted in `FEngine::loop` during episode
   52, after 51 completed episodes and about 3h13m. Exact native cause is unresolved.
-- **Headless stability:** the 70-episode run had no observed native renderer crash
-  or matching kernel segfault/GPU/OOM events. It ended on the parser error, not a
-  rendering failure. This does not prove 100-episode or four-hour stability.
+- **Headless stability:** the 188-episode mini attempt reached over eight hours
+  without an observed native renderer crash; the subsequent DeepSeek Game run
+  completed all 316 episodes over 14h36m43s without a matching kernel crash/GPU/OOM
+  event. This is observed completion of those workloads, not a guarantee that
+  future native Filament runs cannot fail. GUI crash cause remains unresolved.
+- **GroundingDINO phrase mapping:** an existing dependency warning was observed
+  during episode 158. Unmatched decoded phrases deterministically receive class
+  0 (despite the message saying random), which can affect map labels. Actual
+  unmatched phrases/counts are not recorded, so impact is unquantified. The
+  detector behavior was not changed during measurement. Its helper source is
+  preserved in the new GPT-4o-mini archive as an archive-time observation.
 - **Pixel fidelity:** headless reference camera matrices matched the local GUI
   exactly in six render comparisons. Composition/JPEG encoding matched for the
   same render buffers; native cross-backend renders have small pixel differences.
@@ -62,6 +94,13 @@ separate approval.
 - Candidate-only headless VLM with `-v 0`: change 15. Interactive GUI mode remains
   available with `-v 1`. Change 17 adds headless/GUI selection as the first
   `demo.py` question for ObjectNav, CLIP and VLM modes.
+- Generator (`vlm`, one sample) and Ranking (`vlm_rank`, five-sample plurality)
+  are independently selectable alongside unchanged/default Game (`vlm_game`):
+  change 18 fixes baseline ID selection and adds method-labelled tracing. Ties
+  follow candidate order with reject last; invalid baseline IDs abort without
+  changing Game's interpretation. All 79 offline tests and five before/after
+  Game comparisons passed. Both DeepSeek baseline smokes completed 3/3 with
+  actual exit code 0 and verified images/decisions, not benchmark evidence.
 
 Detailed implementation and validation evidence lives in the change history,
 not this active-issue list. Parsing-only shape validation/regeneration is approved
@@ -101,6 +140,8 @@ The paper used GPT-4o; GPT-4o-mini results must keep their actual model label.
 | API-corrected GPT-4o-mini GUI | 51/100 | 0.254902 | 0.091772 | 3.850896 | Episode 52 native renderer crash; [summary](../saved_sessions/20261026-gpt-4o-mini-vlm-game-51of100-render-crashed/session.json) |
 | GPT-4o-mini headless smoke | 3/3 | 0.333333 | 0.088991 | 3.414690 | Passed in 6m40s; not benchmark evidence; [audit](../saved_sessions/smoke_tests/20261026-headless-mini-smoke/validation.json) |
 | GPT-4o-mini headless target attempt | 70/100 | 0.314286 | 0.108471 | 3.543361 | 22 successes; episode 71 parser error; [validated summary](../saved_sessions/20261026-gpt-4o-mini-vlm-game-headless-100ep/archive-summary.json) |
+| GPT-4o-mini headless full-run attempt, parsing-corrected | 188/316 | 0.292553 | 0.104405 | 4.130340 | 55 successes; episode 189 HTTP 403 key limit; [verified archive](../saved_sessions/20261027-gpt-4o-mini-headless-188of316-key-limit/session.json) |
+| DeepSeek V4.1 Flash Game, direct API/headless | 316/316 | 0.319620 | 0.120965 | 4.640878 | 101 successes; [sealed summary](../saved_sessions/20261027-deepseek-v4.1-flash-headless-316ep/archive-summary.json) |
 
 Paper Table III's CLIP baseline reports SR 0.253, SPL 0.106, DTG 4.697. The local
 full CLIP run is available for comparison; its completion supersedes old "baseline
@@ -115,7 +156,7 @@ not a renderer failure. No four-hour result exists. See
 [the cancellation record](../saved_sessions/smoke_tests/20261026-headless-render-endurance/CANCELLED.md).
 Do not reinstate this test as an active requirement without a new user request.
 
-## Latest archive and verification scope
+## Archived verification scope
 
 The [headless session README](../saved_sessions/20261026-gpt-4o-mini-vlm-game-headless-100ep/README.md)
 and [failure analysis](../saved_sessions/20261026-gpt-4o-mini-vlm-game-headless-100ep/FAILURE.md)
@@ -132,6 +173,31 @@ historical observation is not a claim that every subsequent edit was retested.
 `saved_sessions/` is local and ignored by Git. Links above resolve in this checkout;
 a fresh clone will not contain these archives. Keep run-specific detail in those
 archives and use the [saved-session index](../saved_sessions/README.md) to find it.
+
+The [188/316 archive](../saved_sessions/20261027-gpt-4o-mini-headless-188of316-key-limit/README.md)
+preserves all 189 episode outcomes (last error/incomplete), exact image/hash
+evidence, original/run-only evaluation logs and launch-commit source/docs.
+All 2,043 inventoried files and 47,843 similarity-map tar members were verified.
+Similarity maps use a documented mtime window in shared legacy paths. The
+already-running process's actual exit code and complete historical console
+stdout cannot be recovered by the assistant; application stop logs and canonical
+traces remain intact. No policy checkpoints were recalculated in this archival.
+
+The [full DeepSeek Game archive](../saved_sessions/20261027-deepseek-v4.1-flash-headless-316ep/README.md)
+retains all 316 closed episode traces/reports, full stdout/stderr, 2,818 exact
+input images and 83,799 similarity maps. All 90,098 inventoried files were
+verified. Ten whitespace-response API retries recovered; no terminal API-sample
+failure was recorded. Image hashes match the published JPEGs and launch-source
+hashes match the manifest. This archive did not replay all policy checkpoints.
+
+Change-18 evidence is under
+[baseline validation](../saved_sessions/smoke_tests/20261027-baseline-method-validation/),
+[Generator smoke](../saved_sessions/smoke_tests/20261027-deepseek-generator-smoke/validation.json)
+and [Ranking smoke](../saved_sessions/smoke_tests/20261027-deepseek-ranking-smoke/validation.json).
+Each smoke's decisions were independently recomputed from the actual votes;
+there were no Discriminator calls or equilibrium updates. The Game preservation
+check compared against the sealed full-run source, including multi-candidate
+checkpoint arrays. No historical archive was modified by baseline implementation.
 
 ## Maintenance
 

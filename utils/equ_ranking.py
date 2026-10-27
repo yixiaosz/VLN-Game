@@ -178,33 +178,33 @@ class Equilibrium_Ranking():
         # else:
         #     return generative_probabilities_correct.index(max(generative_probabilities_correct))
                         
-    def generator_search(self, base64_image_list, candidate_id, num_samples=1):
-
+    def generator_search(self, base64_image_list, candidate_id, num_samples=1, trace=None):
         self.candidate_id = candidate_id
-        
-        chat_history_for_generator_correct = []
-        
-        chat_history_for_generator_correct.append({"role": "system", "content": generator_prompt})
-        
-        # generate initial policies 
-        # Get generative probabilities for "correct"
-        image_contents = []
-        image_contents.append({
-          "type": "text",
-          "text": self.text_description,
-        })
-        for base64_image in base64_image_list:
-            image_contents.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64_image}"
-                }
-            })
-        chat_history_for_generator_correct.append({"role": "user", "content": image_contents})
-        generative_probabilities_correct = self._get_generative_probabilities(chat_history_for_generator_correct, num_samples=num_samples)
-        
-        max_index = generative_probabilities_correct.index(max(generative_probabilities_correct))
-        return max_index
+        self.trace = trace
+        try:
+            if trace is not None:
+                trace.emit('search_parameters', method='generator' if num_samples == 1 else 'ranking',
+                           iterations=0, generator_samples=num_samples, discriminator_samples=0,
+                           tie_break='first_candidate_order')
+            history = [{"role": "system", "content": generator_prompt}]
+            history += self.create_payload(self.text_description, base64_image_list)
+            ids, probabilities = self._get_generative_probabilities(
+                history, num_samples=num_samples, validate_ids=True)
+            maximum = max(probabilities)
+            selected = ids[probabilities.index(maximum)]
+            if trace is not None:
+                trace.emit('generator_selection', selected_candidate_id=selected,
+                           tied_candidate_ids=[cid for cid, value in zip(ids, probabilities) if value == maximum],
+                           option_order=ids, tie_break='first_candidate_order')
+                trace.finish('completed', selected_candidate_id=selected,
+                             reason='generator_selected_reject' if selected == -1 else 'generator_argmax')
+            return selected
+        except Exception as exc:
+            if trace is not None:
+                trace.finish('error', error={'type': type(exc).__name__, 'message': str(exc)})
+            raise
+        finally:
+            self.trace = None
 
     # Normalizing initial policies
     def _normalize_initial_policy(self, plm_dict, axis=0):
@@ -221,7 +221,7 @@ class Equilibrium_Ranking():
             updated_pi[key] = np.exp(exponent) / np.sum(np.exp(exponent))
         return updated_pi
 
-    def _get_generative_probabilities(self, chat_history, num_samples=5):
+    def _get_generative_probabilities(self, chat_history, num_samples=5, validate_ids=False):
         id_list = []
         responses = []
         response_ids = []
@@ -262,6 +262,9 @@ class Equilibrium_Ranking():
                 self.logger.info(response)
             try:
                 ground_json = ast.literal_eval(response)
+                if validate_ids and (not isinstance(ground_json['object_id'], str) or
+                                     ground_json['object_id'] not in {str(cid) for cid in self.candidate_id} | {'-1'}):
+                    raise APIRequestError('Generator object_id is not a string ID from the offered candidates or -1')
                 id_list.append(ground_json["object_id"])
             except Exception as exc:
                 if self.trace is not None:

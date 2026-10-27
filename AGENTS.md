@@ -95,6 +95,9 @@ For VLM, `-v 0` is candidate-only headless rendering, with no DISPLAY needed;
 `-v 1` uses the GUI. `demo.py` asks headless/GUI first and selects a registry
 model for VLM mode. Direct CLI runs require effective `VLN_*` settings, not just `VLN_MODELS`;
 see [API configuration](docs/LOCAL_SETUP.md#private-api-configuration).
+VLM methods remain independently selectable: `vlm` = one Generator sample,
+`vlm_rank` = five-sample plurality, `vlm_game` = existing equilibrium (default).
+Baseline ties follow candidate order, with reject last; preserve Game behavior.
 
 Check environment/model/data loading and completed episode metrics in smoke runs.
 For GUI checks, verify the window and controls; for headless checks, verify the
@@ -105,9 +108,9 @@ Run relevant offline checks after code changes:
 python -m unittest discover -s tests -v
 ```
 
-Latest recorded state (2026-10-26): CLIP baseline completed; headless VLM stopped
-at 70/100 on malformed landmarks. Parsing-only type validation/regeneration is
-approved and implemented (change 16); targeted episode-71 replay passed. See the
+Latest recorded state (2026-10-27): CLIP and DeepSeek Game completed 316/316;
+headless mini stopped at 188/316 on an OpenRouter key limit. Generator/Ranking
+are validated (change 18); a full DeepSeek Generator run is authorized next. See the
 [status page](docs/REPRODUCTION_STATUS.md) before choosing next work.
 
 ## Documentation maintenance
