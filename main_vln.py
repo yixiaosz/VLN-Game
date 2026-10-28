@@ -44,6 +44,7 @@ def transform_rgb_bgr(image):
 
 # def generate_point_cloud(window):
 def main(args, send_queue, receive_queue, candidate_images=None, candidate_renderer=None):
+    from utils.instruction_lookup import is_jev, InstructionLookup
     args.exp_name = "vlobjectnav-"+ args.vln_mode# + "-mini"
     
     if args.gpt_type == 3:
@@ -74,6 +75,8 @@ def main(args, send_queue, receive_queue, candidate_images=None, candidate_rende
     config.SIMULATOR.HABITAT_SIM_V0.GPU_DEVICE_ID = args.gpu_id
     config.freeze()
 
+    jev = is_jev() and args.vln_mode in ('vlm', 'vlm_rank', 'vlm_game')
+    lookup = InstructionLookup(dataset_path=config.DATASET.DATA_PATH.format(split=config.DATASET.SPLIT)) if jev else None
     env = Env(config=config)
 
     follower = ShortestPathFollowerCompat(
@@ -81,7 +84,9 @@ def main(args, send_queue, receive_queue, candidate_images=None, candidate_rende
     )
 
     agent = VLObjectNav_Agent(args, follower, logging, candidate_images=candidate_images,
-                             candidate_renderer=candidate_renderer)
+                              candidate_renderer=candidate_renderer)
+    if jev:
+        agent.instruction_lookup = lookup
 
     agg_metrics: Dict = defaultdict(float)
 
@@ -92,6 +97,16 @@ def main(args, send_queue, receive_queue, candidate_images=None, candidate_rende
 
     trace_run = None
     if args.vln_mode in ('vlm', 'vlm_rank', 'vlm_game'):
+        if jev:
+            from utils.jev_client import configuration, INTRO, CHOICE_INSTRUCTION, MATCH_INSTRUCTION, REJECT_INSTRUCTION
+            jev_metadata = {'backend': 'jev', 'instruction_lookup': lookup.metadata,
+                            'discriminator_aggregation': 'candidate_local_noul_mean_v1' if args.vln_mode == 'vlm_game' else 'not_applicable',
+                            'baseline_id_validation': 'jev_complete_option_distribution_v1',
+                            'decision_method': {'vlm': 'jev_choice_single_v1', 'vlm_rank': 'jev_choice_mean_5_v1',
+                                                'vlm_game': 'jev_full_support_arrays_vlngame_accumulated_500_v1'}[args.vln_mode],
+                            'api_configuration': configuration()}
+            jev_prompts = {'image_layout': INTRO, 'generator': CHOICE_INSTRUCTION,
+                           'discriminator': MATCH_INSTRUCTION, 'rejection': REJECT_INSTRUCTION}
         trace_run = EquilibriumTraceRun(
             log_dir, {'mode': args.vln_mode, 'requested_episodes': num_episodes,
                       'decision_method': {'vlm': 'generator_single_sample_v1',
@@ -107,8 +122,9 @@ def main(args, send_queue, receive_queue, candidate_images=None, candidate_rende
                       'candidate_render_timeout_seconds': RENDER_TIMEOUT_SECONDS if candidate_renderer is None else None,
                       'candidate_renderer': candidate_renderer.configuration() if candidate_renderer is not None
                                             else {'backend': 'open3d_gui'},
-                      'api_configuration': trace_configuration()},
-            {'parsing': Parsing_prompt, 'generator': generator_prompt,
+                      'api_configuration': trace_configuration() if not jev else {},
+                      **(jev_metadata if jev else {})},
+            jev_prompts if jev else {'parsing': Parsing_prompt, 'generator': generator_prompt,
              'discriminator': discriminator_prompt}, logging)
 
     fail_case = {}

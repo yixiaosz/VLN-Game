@@ -34,7 +34,8 @@ def json_value(value):
 
 def policy_diagnostics(policy):
     result = {}
-    for key, values in policy.items():
+    entries = enumerate(policy) if isinstance(policy, np.ndarray) else policy.items()
+    for key, values in entries:
         values = np.asarray(values)
         finite = bool(np.isfinite(values).all())
         result[str(key)] = {
@@ -52,7 +53,8 @@ def source_identity():
     for name in ('utils/equ_ranking.py', 'utils/equ_trace.py', 'utils/equ_report.py', 'utils/chat_utils.py',
                  'agents/vlnav_agent_vlm.py', 'agents/system_prompt.py',
                  'main_vln.py', 'utils/vis_gui.py', 'utils/vis.py', 'utils/candidate_images.py',
-                 'utils/candidate_renderer.py', 'configs/mapping_base.yaml',
+                  'utils/candidate_renderer.py', 'utils/instruction_lookup.py', 'utils/jev_client.py',
+                  'utils/jev_ranking.py', 'utils/prepare_jev_lookup.py', 'configs/mapping_base.yaml',
                  'configs/vlobjectnav_hm3d.yaml', 'arguments.py'):
         identity['sha256'][name] = hashlib.sha256((root / name).read_bytes()).hexdigest()
     try:
@@ -75,8 +77,9 @@ class EquilibriumTraceRun:
         self.logger = logger
         manifest = dict(metadata, schema_version=1, run_id=run_id, prompts=prompts,
                         source=source_identity(),
-                        discriminator_aggregation=('not_applicable' if metadata.get('mode') in ('vlm', 'vlm_rank')
-                                                   else 'candidate_local_responses_v1'),
+                         discriminator_aggregation=metadata.get('discriminator_aggregation',
+                             'not_applicable' if metadata.get('mode') in ('vlm', 'vlm_rank')
+                             else 'candidate_local_responses_v1'),
                         nonfinite_encoding='NaN, Infinity, -Infinity are JSON strings',
                         response_scope='Logical sample returns/errors and application-level API attempts; SDK-internal retries and billed token usage are not individually captured',
                         sample_failure_policy='abort_test_no_partial_batch')

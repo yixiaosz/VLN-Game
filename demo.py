@@ -45,6 +45,14 @@ DEFAULT_MODELS = [
         "supports_temperature": True,
         "options": {"thinking": {"type": "disabled"}},
     },
+    {
+        "name": "Jev 1.14",
+        "id": "typesafe/jev-1.14",
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_env": "OPENROUTER_API_KEY",
+        "supports_temperature": False,
+        "options": {},
+    },
 ]
 
 MODE_NAMES = {
@@ -53,6 +61,11 @@ MODE_NAMES = {
     "llm": "Language mode: VLM",
 }
 TOTALS = {"objectnav": 2000, "clip": 316, "llm": 316}
+VLM_METHODS = {
+    "vlm": "VLN-generator",
+    "vlm_rank": "VLN-ranking",
+    "vlm_game": "VLN-game",
+}
 LOG_DIRS = {
     "objectnav": "objectnav-dino",
     "clip": "vlobjectnav-clip",
@@ -111,6 +124,10 @@ def load_models():
             "supports_temperature": supports_temperature,
             "options": options,
         })
+    # Private registries often replace DEFAULT_MODELS. Add this supported backend
+    # without replacing/reordering the user's existing model entries.
+    if not any(model['id'] == 'typesafe/jev-1.14' for model in valid):
+        valid.append(dict(DEFAULT_MODELS[-1]))
     return valid
 
 
@@ -151,6 +168,28 @@ def choose_mode():
         if choice in {"3", "llm", "vlm"}:
             return "llm"
         if choice in {"q", "quit", "exit"}:
+            return None
+        print("Invalid choice.")
+        input("Press Enter to continue...")
+
+
+def choose_vlm_method():
+    while True:
+        clear_screen()
+        print("VLM navigation method")
+        print()
+        print("1) VLN-generator")
+        print("2) VLN-ranking")
+        print("3) VLN-game (default)")
+        print("b) Back")
+        choice = input("\nSelect [3]: ").strip().lower()
+        if choice in {"1", "generator", "vlm", "vln-generator"}:
+            return "vlm"
+        if choice in {"2", "ranking", "vlm_rank", "vln-ranking"}:
+            return "vlm_rank"
+        if choice in {"", "3", "game", "vlm_game", "vln-game"}:
+            return "vlm_game"
+        if choice in {"b", "back"}:
             return None
         print("Invalid choice.")
         input("Press Enter to continue...")
@@ -210,11 +249,13 @@ def choose_model(models):
         input("Press Enter to continue...")
 
 
-def show_summary(mode, count, model, visualize):
+def show_summary(mode, count, model, visualize, vlm_method="vlm_game"):
     clear_screen()
     print("Demo summary")
     print()
     print(f"Mode:     {MODE_NAMES[mode]}")
+    if mode == "llm":
+        print(f"Method:   {VLM_METHODS[vlm_method]}")
     if count == -1:
         print(f"Episodes: Full run ({TOTALS[mode]:,})")
     else:
@@ -235,7 +276,7 @@ def show_summary(mode, count, model, visualize):
     return ask_yes_no("Launch? [Y/n]: ", default_yes=True)
 
 
-def build_launch(mode, count, model, visualize):
+def build_launch(mode, count, model, visualize, vlm_method="vlm_game"):
     env = os.environ.copy()
     gsa = Path(env.get("GSA_PATH", DEFAULT_GSA)).expanduser().resolve()
     if not gsa.is_dir():
@@ -274,14 +315,19 @@ def build_launch(mode, count, model, visualize):
         command = [str(python), "main_vln.py"]
         if mode == "clip":
             command.extend(["--vln_mode", "clip"])
+        elif mode == "llm":
+            if vlm_method not in VLM_METHODS:
+                raise ValueError(f"Unknown VLM method: {vlm_method}")
+            command.extend(["--vln_mode", vlm_method])
     command.extend(["-v", str(visualize)])
     if count != -1:
         command.extend(["--episode_count", str(count)])
     return command, env
 
 
-def run_demo(mode, command, env):
-    log_path = ROOT / "dump" / "logs" / LOG_DIRS[mode] / "eval.log"
+def run_demo(mode, command, env, vlm_method="vlm_game"):
+    log_dir = "vlobjectnav-" + vlm_method if mode == "llm" else LOG_DIRS[mode]
+    log_path = ROOT / "dump" / "logs" / log_dir / "eval.log"
     print()
     print("Launching:")
     print(" ".join(shlex.quote(part) for part in command))
@@ -316,7 +362,11 @@ def main():
                 break
 
             model = None
+            vlm_method = "vlm_game"
             if mode == "llm":
+                vlm_method = choose_vlm_method()
+                if vlm_method is None:
+                    continue
                 models = load_models()
                 if models is None:
                     input("Press Enter to return to the menu...")
@@ -325,16 +375,16 @@ def main():
                 if model is None:
                     continue
 
-            if not show_summary(mode, count, model, visualize):
+            if not show_summary(mode, count, model, visualize, vlm_method):
                 continue
 
-            launch = build_launch(mode, count, model, visualize)
+            launch = build_launch(mode, count, model, visualize, vlm_method)
             if launch is None:
                 input("Press Enter to return to the menu...")
                 continue
 
             command, env = launch
-            run_demo(mode, command, env)
+            run_demo(mode, command, env, vlm_method)
             return 0
 
 

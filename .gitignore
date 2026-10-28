@@ -20,6 +20,7 @@ test*
 !tests/test_chat_utils.py
 !tests/test_candidate_renderer.py
 !tests/test_generator_baselines.py
+!tests/test_jev.py
 saved_pcd
 create*
 visualize*

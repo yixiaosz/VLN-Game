@@ -578,6 +578,80 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
       instead of hourly checks. It starts from the normal iterator beginning,
       without skipping episodes or merging the failed attempt's metrics.
 
+20. **Isolated Jev backend and Jev-only frozen instruction parsing** — approved
+    2026-10-28 after the completed DeepSeek benchmarks; implemented locally.
+    - Add `typesafe/jev-1.14` through OpenRouter Decisions, not `jev-router` or chat
+      completions. `utils/jev_client.py` constructs native state/questions from
+      original instructions, real candidate IDs and exact JPEG buffers. Omit chat
+      generation options. Use the existing bounded transport/retry machinery;
+      malformed typed outputs share the same budget, with no partial aggregation.
+    - User retained names/flags VLN-generator (`vlm`), VLN-ranking (`vlm_rank`),
+      VLN-game (`vlm_game`). Jev Generator uses one Choice; Ranking averages five
+      complete Choice distributions with equal weights, rather than hard-vote
+      plurality. Candidate-order ties put rejection last. Confidence is retained
+      as metadata, not used for weighting/thresholds; no dedicated cost tracking.
+    - Jev Game averages five Choices over all offered candidates plus rejection,
+      and five candidate-local Nouls per real candidate. Multiple candidates use
+      five all-image none-match Nouls; one candidate derives rejection by complement.
+      Match probabilities are not normalized across candidates.
+    - User explicitly instructed arrays instead of the original equilibrium
+      dictionaries. `utils/jev_ranking.py` uses G 2×K / D K×2, `[g;1-g]` and
+      `[d,1-d]`, bias 0.05, row-normalized initial policies, zero Q arrays, 500
+      accumulated opponent-policy updates weighted `1/(2t)`, lambdas/etas 0.1,
+      simultaneous previous-policy inputs and row-wise stable softmax. Select
+      final G correct-row argmax. No sampled-support filtering/early exit,
+      column initialization, running-average payoff replacement or 5,000 updates.
+    - Jev-only parsing uses `utils/instruction_lookup.py`, the preparation tool
+      `utils/prepare_jev_lookup.py`, and `configs/jev_instruction_parses.v1.json`
+      with its checksum sidecar. All 316 unique exact instructions were parsed
+      by direct DeepSeek Flash, unchanged Parsing_prompt, temperature 0.5,
+      max_tokens 512, disabled thinking, original shape validation/retry budget.
+      All 316 application attempts returned accepted parses without retry; raw
+      provider responses and journals are preserved. No key normalization,
+      repeated sampling to choose a parse or manual rewriting. Full coverage,
+      dataset fingerprints and checksum are mandatory; no live fallback.
+      Structural validation does not prove semantic accuracy. Only perception/
+      target similarity consumes parsed phrases; Jev gets the full instruction.
+    - Preserve other models' live parsing, requests, aggregation and equilibrium
+      methods. Registry selection appends Jev without replacing private entries;
+      switching resets effective model/key/options. No protected GUI/pause,
+      arguments, requirements, dataset episodes or navigation thresholds changed.
+    - Traces/reports label native probabilities, frozen-table identity and array
+      axes/checkpoints; record raw typed responses, validated pooled vectors and
+      Q/policy snapshots. Source identity includes the new implementation files.
+      Strict typed validation requires complete finite unit-interval vectors;
+      mass deviations at most 1e-6 are normalized for roundoff, larger deviations
+      retry. Missing options are never zero-filled and no values are clamped.
+    - Verification: all 98 offline tests passed, including solver parity against
+      the existing dictionary equations at every recorded checkpoint (K=2/4/8),
+      full-support/rejection branches, probability-vs-vote distinction, lookup
+      integrity, native HTTP failure handling and model switching. Five sealed-
+      reference chat Game comparisons match requests, errors and checkpoint
+      arrays; its core method ASTs remain unchanged. Each Jev method completed a
+      three-episode natural headless smoke with actual exit code 0, nine searches
+      and 13 exact input images. All had 0/3 successes, SPL 0, DTG 7.748133 m;
+      these verify operation, not accuracy. All means/selections and 45 Game policy
+      checkpoints were independently replayed; 184 application attempts, no retry
+      or terminal failure. Detailed results/caveats are maintained in the status page.
+    - Evidence: `saved_sessions/smoke_tests/20261028-jev-lookup-generation/`,
+      `20261028-jev-backend-validation/` and the preceding exact-input
+      `20261028-jev-repeatability/` probe (all under smoke_tests). Table v1 SHA-256:
+      `d4abcaaf62f8cdf107e9490a71b60af80446607839454f9d40b7b4a6ac83812a`.
+
+21. **`demo.py` VLM method menu** — user-requested launcher selection (2026-10-28).
+    - After choosing VLM navigation and episode count, select VLN-generator
+      (`vlm`), VLN-ranking (`vlm_rank`), or VLN-game (`vlm_game`), then the model.
+      Enter defaults to Game; Back returns to episode-count selection.
+    - Pass the chosen `--vln_mode` explicitly, display the method in the launch
+      summary and print its matching evaluation-log path. Applies to Jev and
+      existing chat models. ObjectNav/CLIP flows and full-run confirmation remain
+      as before; no inference, parsing, navigation or equilibrium behavior changes.
+    - Verification: 21 offline mocked launcher cases passed, covering all methods,
+      Enter default, Jev/DeepSeek, headless/GUI, Back, invalid input, ObjectNav/CLIP
+      menu skipping, matching summary/log paths and default-no full-run confirmation.
+      All 98 existing offline tests passed. No navigation process or API call.
+      Evidence: `saved_sessions/smoke_tests/20261028-demo-method-selection/`.
+
 #### Data compatibility changes
 
 The data were downloaded from [Github](https://github.com/matterport/habitat-matterport-3dresearch).

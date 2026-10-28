@@ -32,8 +32,10 @@ python demo.py
 
 The launcher's first question selects **Headless (no window)** or **GUI (Open3D)**.
 It then asks for ObjectNav (reference), CLIP-based language, or VLM language mode,
-followed by the 5/full/custom episode count and a model only in VLM mode. The
-display choice applies to every mode and is shown again in the launch summary.
+followed by the 5/full/custom episode count. In VLM mode, choose **VLN-generator**,
+**VLN-ranking**, or **VLN-game**, then choose the model. Press Enter at the method
+menu for Game (the default), or `b` to return to episode count. The launch summary
+shows the display, method and model; the printed log path matches the method.
 Headless runs do not require `DISPLAY`; GUI runs require desktop access.
 
 ## ObjectNav demo
@@ -71,8 +73,8 @@ and retries do not add logical votes. Manifests record the bounded-ID retry poli
 
 All three VLM methods archive exact image inputs, raw opinions, API attempts,
 decisions and episode metrics. Generator/Ranking record zero Discriminator calls
-and zero equilibrium updates, labelled not applicable. Use direct commands to
-choose the baseline; `demo.py`'s VLM option continues to select Game by default.
+and zero equilibrium updates, labelled not applicable. Select the method in
+`demo.py` or use the direct commands below; Game remains the default.
 
 ```bash
 python main_vln.py --vln_mode vlm --episode_count 5 -v 0
@@ -188,6 +190,34 @@ label APIs, preserving the previous pixels/styles while eliminating the repeated
 `BoxAnnotator.annotate` deprecation warning. This is a separate visualization
 compatibility change; Supervision remains pinned to the installed 0.21.0 setup.
 
+### Jev 1.14 as a VLM option
+
+Choose **Jev 1.14** in the model menu. It uses OpenRouter's native Decisions API;
+the existing DeepSeek/OpenAI chat-model paths remain available. Method names and
+flags stay the same, with model/backend labels distinguishing the Jev version:
+
+| Method | Flag | Jev behavior |
+|---|---|---|
+| VLN-generator | `vlm` | One Choice distribution, argmax |
+| VLN-ranking | `vlm_rank` | Equal-weight mean of five complete Choice distributions, argmax |
+| VLN-game | `vlm_game` | Five-Choice mean plus five candidate-local Noul means; full-support array equilibrium |
+
+Rejection is an explicit option, last in deterministic candidate-order ties.
+Confidence is recorded but is not a weight or threshold. Game retains bias 0.05,
+row-normalized initialization, accumulated `1/(2t)` payoffs and 500 updates;
+Discriminator match probabilities are not normalized across candidates.
+
+Jev alone uses the frozen DeepSeek-generated exact-instruction parsing table.
+Its 316 entries guide existing perception/mapping; Jev sees the unchanged full
+instruction, real candidate IDs and exact candidate composites. Missing entries
+fail preflight, with no live fallback. Other VLMs continue parsing their own
+instructions. Structural validation does not establish semantic parse accuracy.
+
+See [Jev setup and direct CLI commands](docs/LOCAL_SETUP.md#jev-114-backend-and-frozen-parsing)
+and [current validation results](docs/REPRODUCTION_STATUS.md). Existing-model
+five-vote plurality and sampled-support Game behavior are not replaced by these
+Jev-specific probability methods.
+
 ### API reliability
 
 Supported parsing/Generator/Discriminator calls keep the existing OpenAI SDK and
@@ -207,8 +237,9 @@ If a required sample ultimately fails, the test stops with an explicit API error
 the affected episode is incomplete, not counted as a navigation failure, and no
 partial-batch frequency is calculated. Previously completed episodes remain saved.
 This is labelled `abort_test_no_partial_batch` in the manifest; old archives keep
-their actual Generator/Discriminator denominator behavior. Complete batches still
-use five logical samples and the same prompts, payload settings, and equations.
+their actual Generator/Discriminator denominator behavior. Existing chat-model
+Game batches still use five logical samples and their unchanged prompts, payload
+settings and equations; Jev-specific probability methods are described above.
 
 These are connection/read timeouts, **not a strict wall-clock deadline** against
 a server continuously sending bytes. Interrupts stop peer retry loops before

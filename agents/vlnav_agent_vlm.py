@@ -48,6 +48,7 @@ import ast
 import base64
 from PIL import Image, ImageDraw, ImageFont
 from utils.equ_ranking import Equilibrium_Ranking
+from utils.instruction_lookup import is_jev
 # from agents.system_prompt import Instruction_system_prompt
 from agents.objnav_agent import ObjectNav_Agent
 from utils.candidate_images import make_request, read_completed_image, CandidateRenderError
@@ -64,7 +65,7 @@ def encode_image(image_path):
 
 class VLObjectNav_Agent(ObjectNav_Agent):
     def __init__(self, args, follower=None, logger=None, candidate_images=None,
-                 candidate_renderer=None) -> None:
+                 candidate_renderer=None, instruction_lookup=None) -> None:
         self.args = args
         if follower != None:
             self.follower = follower
@@ -83,6 +84,7 @@ class VLObjectNav_Agent(ObjectNav_Agent):
         self.episode_trace = None
         self.candidate_images = candidate_images
         self.candidate_renderer = candidate_renderer
+        self.instruction_lookup = instruction_lookup
         self.render_run_id = uuid.uuid4().hex
         self.render_search_count = 0
         
@@ -118,8 +120,13 @@ class VLObjectNav_Agent(ObjectNav_Agent):
                 self.classes = [self.text_queries]
             elif 'vlm' in self.args.vln_mode :
                 self.all_objects = []
-                self.equ_ranking = Equilibrium_Ranking(self.text_queries, self.logger,
-                                                       episode_trace=self.episode_trace)
+                if is_jev():
+                    from utils.jev_ranking import JevEquilibriumRanking
+                    self.equ_ranking = JevEquilibriumRanking(self.text_queries, self.logger,
+                        episode_trace=self.episode_trace, lookup=self.instruction_lookup)
+                else:
+                    self.equ_ranking = Equilibrium_Ranking(self.text_queries, self.logger,
+                                                           episode_trace=self.episode_trace)
                 response_message = self.equ_ranking.response_message
 
                 ground_json = ast.literal_eval(response_message)

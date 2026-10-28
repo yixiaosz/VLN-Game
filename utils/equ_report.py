@@ -169,7 +169,7 @@ def render_samples(report, events, role):
     for response in responses:
         value = parsed.get(response.get('sample_id'), {})
         interpretation = (option(value['parsed_object_id']) if 'parsed_object_id' in value
-                          else value.get('parsed_verdict'))
+                          else value.get('native_probabilities', value.get('parsed_verdict')))
         rows.append([response.get('sample_id'),
                      option(response.get('candidate_id')) if role == 'discriminator' else 'all inputs',
                      response.get('completion_order'), interpretation, response.get('status')])
@@ -181,6 +181,43 @@ def render_samples(report, events, role):
             report.add(response['raw_content'], 4)
         else:
             report.add(f'ERROR: {display(response.get("error"))}', 4)
+
+
+def render_jev_probabilities(report, events, parameters, end):
+    report.heading('2. JEV GENERATOR: NATIVE PROBABILITIES')
+    render_samples(report, events, 'generator')
+    gen = first(events, 'generator_aggregate')
+    order = gen.get('policy_candidate_order', [])
+    report.add('Equal-weight arithmetic mean; confidence is metadata, not a weight.')
+    report.add('Accepted denominator: ' + display(gen.get('denominator_used')))
+    report.table(['Option', 'Pooled probability'], [[option(cid), gen.get('p_vlm_all_candidates', {}).get(str(cid))] for cid in order])
+    if parameters.get('method') != 'game':
+        report.add('Generator-only selection; Discriminator and equilibrium are not used.')
+        report.add('Equilibrium updates: 0 (not applicable).')
+    else:
+        report.heading('3. JEV DISCRIMINATOR: CANDIDATE-LOCAL NOUL MEANS')
+        render_samples(report, events, 'discriminator')
+        disc = first(events, 'discriminator_aggregate')
+        report.table(['Option', 'P(correct)', 'P(incorrect)'],
+                     [[option(cid), *pair] for cid, pair in zip(order, disc.get('verdict_probabilities', []))])
+        report.add('Reject-all source: ' + display(disc.get('reject_all')))
+        layout = first(events, 'policy_layout')
+        report.heading('4. ARRAY EQUILIBRIUM')
+        report.add('Solver: ' + display(parameters.get('solver')))
+        report.add('G axes: [correct/incorrect, candidate]; D axes: [candidate, correct/incorrect].')
+        report.add('Option order (rejection last): ' + display(order))
+        report.add('Biased G input: ' + display(layout.get('generator_normalization_input')))
+        report.add('Biased D input: ' + display(layout.get('discriminator_normalization_input')))
+        for snapshot in (e for e in events if e.get('event') == 'policy_snapshot'):
+            report.add('Update ' + display(snapshot.get('update_iteration')))
+            report.add('G: ' + display(snapshot.get('pi_G')), 2)
+            report.add('D: ' + display(snapshot.get('pi_D')), 2)
+            report.add('Diagnostics: ' + display(snapshot.get('diagnostics')), 2)
+        report.add('Equilibrium updates completed: ' + display(end.get('equilibrium_updates_completed')))
+    report.heading('FINAL JEV DECISION')
+    report.add('Selected option: ' + option(end.get('selected_candidate_id')))
+    report.add('Tie rule: ' + display(parameters.get('tie_break')))
+    report.add('Tied options: ' + display(first(events, 'generator_selection').get('tied_candidate_ids')))
 
 
 def render_search(report, sid, events, warnings):
@@ -235,6 +272,9 @@ def render_search(report, sid, events, warnings):
     if not images:
         report.add('No archived input metadata recorded.')
 
+    if parameters.get('backend') == 'jev':
+        render_jev_probabilities(report, events, parameters, end)
+        return
     report.heading('2. GENERATOR RESPONSES AND AGGREGATION')
     render_samples(report, events, 'generator')
     gen = first(events, 'generator_aggregate')
@@ -406,6 +446,10 @@ def episode_report(path):
         report.add('Parsed instruction: ' + display(parsed.get('parsed_instruction')))
     api = manifest.get('api_configuration', {})
     report.add('API base: ' + display(api.get('api_base')))
+    if manifest.get('backend') == 'jev':
+        report.add('Backend/model: Jev / ' + display(api.get('model')))
+        report.add('Decision method: ' + display(manifest.get('decision_method')))
+        report.add('Frozen instruction lookup: ' + display(manifest.get('instruction_lookup')))
     for role, request in api.get('requests', {}).items():
         report.add(f'{role.capitalize()} model/settings: {display(request)}')
     report.add('Display: numbers rounded to 10 significant digits; small values use scientific notation.')
