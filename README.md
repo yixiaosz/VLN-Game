@@ -258,7 +258,9 @@ See [change 16](docs/CHANGES_FROM_ORIGINAL.md) and the
 The exact archived episode-71 malformed response was rejected and recovered via
 a live retry; a separate natural-provider replay of that dataset episode then
 completed successfully. This targeted check does not complete the stopped
-100-episode benchmark.
+100-episode benchmark. Its standalone short-session evidence was intentionally
+retired during the approved archive cleanup; historical results remain recorded
+in the change history.
 
 ### VLM-Game trace archive
 
@@ -302,6 +304,21 @@ clamped or repaired. Application-level API attempts are now traced separately
 from logical samples; SDK-internal retries and billed token usage are not captured. CLIP,
 Generator-only, and Ranking modes retain their existing logging.
 
+#### Archive retention
+
+Keep completed full benchmarks and the longest GPT-4o-mini attempt (currently
+188/316); remove standalone short/failed/smoke archives. Preserve exact candidate
+images, raw responses, traces/reports, source/configuration and the retained run's
+own diagnostics/monitoring. Keep frozen-parser raw generation with the full Jev
+archive. Remove per-step `output/dump/Vis-simi-*` exports and equivalent compressed
+heatmap archives/member manifests from final archives, including future runs.
+
+Keep canonical byte-exact run-only logs, not earlier foreign launch blocks.
+The approved cleanup preserves original acquisition/seal provenance and metrics,
+then issues explicitly labelled post-cleanup inventories after validation.
+See [archive maintenance commands](docs/LOCAL_SETUP.md#archive-retention-and-post-run-cleanup)
+and the local [retained-session index](saved_sessions/README.md).
+
 #### Terminal-readable episode reports
 
 After an episode trace closes, `equilibrium.txt` is generated alongside its
@@ -318,6 +335,10 @@ call the VLM, or modify JSONL/images. A report-generation failure is logged with
 changing episode outcomes.
 
 Generate or regenerate reports for an existing run or a single episode:
+
+For sealed archives, inspect existing reports read-only. Regeneration changes
+archive bytes and requires a documented revision/reseal; the post-cleanup verifier
+above performs inspection without rewriting reports or historical metadata.
 
 ```bash
 python -m utils.equ_report "/path/to/run-directory"

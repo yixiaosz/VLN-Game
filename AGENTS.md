@@ -2,9 +2,8 @@
 
 ## Purpose and document map
 
-Faithfully reproduce VLN-Game's zero-shot object/language-goal navigation on Habitat/HM3D
-using the original GroundingDINO, MobileSAM, CLIP, object-centric mapping, frontier
-exploration and game-theoretic VLM pipeline. Unrelated refactors/redesigns/tuning are outside scope.
+Faithfully reproduce VLN-Game's zero-shot navigation using Habitat/HM3D, GroundingDINO,
+MobileSAM, CLIP, object-centric mapping, frontier exploration and game-theoretic VLMs. Unrelated refactors/redesigns/tuning are outside scope.
 
 Read this guide for every task; load the following documents when relevant:
 | Document | Authority / when to read |
@@ -17,33 +16,27 @@ Read this guide for every task; load the following documents when relevant:
 
 ## Editing and execution rules
 
-1. **Fidelity first.** Do not alter algorithms, hyperparameters, evaluation, metrics,
-   observation/action spaces or dataset semantics to improve results.
-   Never tune thresholds, prompts, episode selection or configs for higher SPL/SR.
+1. **Fidelity first.** Do not alter algorithms, hyperparameters, evaluation, metrics, observation/action spaces
+   or dataset semantics to improve results. Never tune thresholds, prompts, episode selection or configs for higher SPL/SR.
 2. **Only fix blockers.** Make minimal install/import/data/runtime compatibility
    fixes or explicitly approved changes. No model-stack replacements or unrelated cleanup.
-3. **Discuss behavioral changes first.** Obtain user approval before changing
-   navigation, evaluation, metrics, model-output interpretation or GUI interaction.
-   Approval of one correction is not permission for unrelated changes.
+3. **Discuss behavioral changes first.** Obtain approval before changing navigation, evaluation, metrics,
+   model-output interpretation or GUI interaction. One correction's approval does not authorize unrelated changes.
 4. **Preserve protected surfaces.** Leave `requirements.txt`, `arguments.py`,
    `utils/vis_gui.py` and manual-query/pause behavior unchanged unless a documented
    blocker requires a change; behavioral changes still require approval.
 5. **Preserve the original README.** Do not edit the text below the marker
    `(Below this line is the original README of the [VLN-game](https://github.com/ybgdgh/VLN-Game) code)`.
-6. **No default long evaluation.** Use a 3–5 episode smoke run unless the user
-   explicitly requests a larger run. Full benchmarks are 2,000 ObjectNav or 316
-   language episodes. Do not restart a stopped billed run without authorization.
-7. **Freeze during measurement.** During an explicitly agreed baseline/reference
-   run, do not change logic. Completion does not imply user review/sign-off.
-   Old baseline-first holds are historical; follow later approvals/current instructions.
+6. **No default long evaluation.** Use a 3–5 episode smoke unless a larger run is explicitly requested.
+   Full benchmarks: 2,000 ObjectNav / 316 language episodes. No stopped billed run restart without authorization.
+7. **Freeze during measurement.** Do not change logic during an agreed baseline/reference run; completion
+   does not imply user sign-off. Old baseline-first holds are historical; follow later approvals/current instructions.
 8. **No sudo.** List necessary privileged commands for the user to execute.
 9. **No unsolicited Git publication.** Commit, amend, push or create PRs only when requested.
-10. **No secrets.** Never put keys, HM3D credentials, tokens or passwords in files,
-    logs or argv, or print the private API environment's contents.
-11. **Preserve user work/data.** Do not overwrite unfamiliar changes or delete datasets,
-    tarballs or session evidence without explicit permission.
-12. **Document persistent changes.** Record approval, scope, verification and evidence
-    in the change history; follow the maintenance routing below.
+10. **No secrets.** Never put keys/credentials/tokens/passwords in files, logs or argv, or print private API environment contents.
+11. **Preserve user work/data.** Do not overwrite unfamiliar changes or delete datasets/tarballs/session evidence
+    except the explicitly approved archive-retention scope below; datasets/model assets are outside that scope.
+12. **Document persistent changes.** Record approval, scope, verification and evidence in the change history; follow routing below.
 
 ## Reproduction and provenance invariants
 
@@ -64,6 +57,17 @@ Read this guide for every task; load the following documents when relevant:
 - Offscreen rendering still uses Filament; short smoke checks do not establish
   multi-hour stability. Socket-inactivity timeouts are not absolute deadlines,
   and native offscreen calls have no enforceable Python timeout/crash isolation.
+
+## Archive retention — approved 2026-10-30 (change 22)
+
+- Keep completed full benchmarks plus the longest GPT-4o-mini attempt (currently 188/316); prune standalone short/failed/smoke sessions.
+- Preserve each kept run's raw responses, JSONL/reports, exact candidate images/published copies, source/config snapshots, own diagnostics/monitoring.
+- Preserve raw DeepSeek frozen-parse generation in Jev Game's `configuration/parse-generation/`; runtime table remains in `configs/`.
+- Remove `output/dump/Vis-simi-*` trees and equivalent compressed heatmap archives/manifests from final archives, including future runs.
+- Keep byte-exact run-only evaluation logs; remove foreign appended launch blocks/copies and redundant loose monitoring files.
+- Use reviewed path allowlists; verify protected bytes and unchanged metrics, update indexes/current docs, then reseal once cleanup is settled.
+- Record old acquisition counts/seal digests and intentional removals; never present a post-cleanup seal as the original acquisition seal.
+- Historical paths/snapshots stay unchanged; resolve folders via `saved_sessions/session-renames.json`. Do not rerun old archive writers; use the read-only verifier (local setup).
 
 ## Jev engineering decisions — approved/implemented 2026-10-28 (change 20)
 
@@ -129,9 +133,9 @@ add votes or change Game decoding. Jev's approved differences are specified abov
 Smoke checks verify loading/completed metrics and either GUI controls or exact
 headless inputs/no window. Offline code checks: `python -m unittest discover -s tests -v`.
 
-Latest recorded state (2026-10-28): CLIP and DeepSeek Game, Generator and Ranking
-completed 316/316 and are archived; mini stopped at 188/316 on a key limit. Sequential runs/manual monitoring are complete.
-[status page](docs/REPRODUCTION_STATUS.md). Jev backend/table are implemented; check smoke verification there.
+Latest verified state (2026-10-31): CLIP and DeepSeek/Jev Game, Generator and Ranking
+completed 316/316; mini stopped at 188/316 on a key limit. Eight retained archives are post-cleanup sealed/verified; monitoring is complete.
+Current folder names and full results: [session index](saved_sessions/README.md), [status page](docs/REPRODUCTION_STATUS.md). No session is pending or running.
 
 ## Documentation maintenance
 
@@ -149,12 +153,8 @@ Keep this guide approximately **120–160 lines**: an operational policy/index, 
 1. **Read source/evidence first.** Date observations; distinguish implemented, approved-but-unimplemented,
    proposed, cancelled, failed and unknown. Proposals/old approvals/cancelled tests are not current instructions.
 2. **One authoritative home.** Keep details in routed documents; refresh linked summaries when state changes.
-3. **Stable history.** Preserve IDs/dates/approval scope/results/caveats; qualify
-   superseded claims as historical and append corrections, never rewrite run behavior.
-4. **Current status.** Replace resolved blockers/stale pending claims with outcomes
-   and evidence; keep milestone history outside active blockers, no episode/PID diary here.
-5. **Sealed archives stay unchanged.** Never update archived snapshots, manifests, images or checksums.
-6. **Durable evidence.** Prefer `saved_sessions/` over `/tmp`; verify links and mark
-   missing historical evidence explicitly; local archives need not exist in fresh clones.
-7. **Docs-only verification.** Check links/anchors and `git diff --check`; confirm original README,
-   source/data and archives unchanged. No model runs/repeated app tests or new source-change ID for docs-only work.
+3. **Stable history.** Preserve IDs/dates/approval scope/results/caveats; qualify historical claims, never rewrite run behavior.
+4. **Current status.** Replace stale claims with outcomes/evidence; no episode/PID diary here, milestone history outside active blockers.
+5. **Sealed archives.** Changes require the approved retention/reseal procedure; as-measured snapshots/raw run data stay unchanged.
+6. **Durable evidence.** Prefer `saved_sessions/`; verify links, mark intentionally removed/missing evidence, no invented replacement artifacts.
+7. **Docs-only verification.** Check links/anchors, original README and `git diff --check`; no unapproved source/archive changes or app/model reruns.

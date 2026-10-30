@@ -21,6 +21,11 @@ explicitly absolute; relocating this document did not relocate those artifacts.
   which revision produced the paper's reported metrics.
 - Local `saved_sessions/` archives are ignored by Git; links to them work only in
   this checkout. Do not edit their documentation snapshots or canonical evidence.
+- Change 22 (2026-10-30) intentionally retires standalone short/failed/smoke
+  archives and heatmap artifacts. Their paths/results below describe historical
+  acquisition, not current availability. Raw lookup generation was relocated to
+  retained Jev Game `configuration/parse-generation/`. See the local
+  [cleanup record](../saved_sessions/cleanup-record.json) for removals and new seals.
 - Historical `/tmp/opencode/candidate-image-vlm-smoke/` and
   `/tmp/opencode/discriminator-corrected-mini-smoke/` directories were absent at
   reorganization. Their old locations and recorded observations are retained,
@@ -110,10 +115,11 @@ upstream cause cannot be recovered. At that revision, `requests.post` had no
 timeout/status check, caught the wrong exception family, and malformed Generator
 content did not consume the retry budget.
 
-The lingering process was stopped before verified archival. See the
-[20/100 session](../saved_sessions/20261025-gpt-4o-mini-vlm-game-20of100-terminated/session.json)
-and its `API-error-investigation.txt`. No API behavior changed during that
-archival/investigation task; the later reliability correction is change 14.
+The lingering process was stopped before verified archival. The 20/100 session
+and its `API-error-investigation.txt` recorded that investigation; both were
+[intentionally retired by change 22](../saved_sessions/cleanup-record.json).
+No API behavior changed during that archival/investigation task; the later
+reliability correction is change 14.
 
 ## Changes from the original paper repo
 
@@ -651,6 +657,60 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
       menu skipping, matching summary/log paths and default-no full-run confirmation.
       All 98 existing offline tests passed. No navigation process or API call.
       Evidence: `saved_sessions/smoke_tests/20261028-demo-method-selection/`.
+
+22. **Archive retention, log consolidation and post-cleanup resealing** — user-
+    approved 2026-10-30 after all requested full Jev/DeepSeek runs completed.
+    - Keep seven completed 316-episode runs (CLIP, DeepSeek Game/Generator/Ranking,
+      Jev Game/Ranking/Generator) plus the longest mini attempt (188/316). Prune
+      five standalone short/failed attempts and the smoke tree. This retention
+      preference applies to future sessions; full benchmarks/longest mini retain
+      raw responses, JSONL/reports, exact candidate inputs/published copies,
+      source/configuration and their own diagnostics/monitoring.
+    - Relocate the 316-instruction DeepSeek raw frozen-parse generation from the
+      former smoke tree into Jev Game's `configuration/parse-generation/` before
+      pruning. Runtime table/checksum in `configs/` and raw parse values unchanged.
+    - Remove per-step similarity-map `output/dump/` PNG trees, equivalent CLIP/
+      mini compressed heatmap archives and their manifests, including from future
+      final archives. Keep candidate images. No runtime map computation, detector,
+      model, prompt, controller, threshold, dataset or evaluation behavior changes.
+    - Remove foreign launch blocks by retaining existing byte-exact run-only logs
+      and retiring mixed copies. Consolidate redundant loose monitoring into
+      existing byte-identical session copies. Earlier acquisition count/seal
+      claims remain explicitly historical; as-measured source/docs snapshots
+      and raw retained responses/traces/images are not rewritten.
+    - Local `saved_sessions/cleanup_sessions.py` uses explicit allowlists and
+      preflight inventory/byte checks. Record original seal digests/counts and
+      intentional removals, verify protected bytes/metrics, update current metadata,
+      indexes and documentation, then generate post-cleanup seals once at the end.
+      Old acquisition scripts stay preserved as executed, not rerun against
+      pruned data. See the cleanup-aware read-only command in local setup.
+    - The original inventories passed before cleanup; 37,573 retained files have
+      protected byte fingerprints. Exact verified removals include 502,293 PNGs
+      in six `output/dump/` trees and 100,775 heatmap members in two compressed
+      archives. CLIP's 11-line foreign prefix and mini's 680-line foreign prefix
+      are excluded by their already-verified clean extracts. Original SR/SPL/DTG,
+      episode counts, ownership, labels and failed/incomplete-episode semantics
+      remain unchanged. Final counts/verification are recorded in the local
+      `saved_sessions/cleanup-record.json`, not invented acquisition seals.
+    - Cleanup completed: eight post-cleanup archives, 37,624 inventoried files
+      verified, all 37,573 protected files and original measurements unchanged.
+      Raw lookup generation verified against all 316 entries/provider responses.
+      Local archive footprint dropped from about 13 GiB to 2.1 GiB. Fifteen
+      current documentation/index pages passed link checks, original README text
+      below its marker remained byte-exact, and `git diff --check` passed. No
+      app/model evaluation or API call was rerun for cleanup.
+
+23. **User-renamed archive outer directories and relocation-aware indexing** —
+    2026-10-30. User removed distracting suffixes and the redundant headless tag.
+    - Record the explicit eight old-to-current names in local
+      `saved_sessions/session-renames.json`. Update the current catalog/index,
+      active documentation links and cleanup-aware verifier to resolve the aliases.
+    - Preserve original cleanup-plan/record identifiers, embedded acquisition
+      paths, raw traces/responses, source/docs snapshots and all sealed files.
+      Historical paths in older entries remain historical, not active locations.
+    - All eight prior inventory digests and 37,624 inventory entries verified at
+      the new locations, with identical run identities/metrics. No archive file
+      bytes changed and no seal regeneration was required. No model/API calls.
 
 #### Data compatibility changes
 
