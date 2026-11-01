@@ -7,6 +7,13 @@ rules, [LOCAL_SETUP.md](LOCAL_SETUP.md) for operation and
 
 ## Current state and next decision
 
+**Performance analysis (2026-10-31, read-only):** [Stage I executive summary](EXECUTIVE_SUMMARY_STAGE1.md); details in [PERFORMANCE_ANALYSIS.md](PERFORMANCE_ANALYSIS.md).
+Candidate supply is the same in every run, and the losses happen in exploitation. Game makes no net
+difference for DeepSeek and is significantly worse for Jev, because Jev's Discriminator is biased
+low and barely informative. Proposals only; no change approved. The in-progress 1017 OpenRouter run is excluded.
+[EQUILIBRIUM_REVIEW.md](EQUILIBRIUM_REVIEW.md) explains why the paper's equilibrium gain (+0.3 pp GPT-4o,
++2.2 pp mini; single runs) is within noise, and how the code differs from the Consensus Game/paper equations.
+
 **Archive folder names simplified by the user (2026-10-30, change 23).** Current
 links/catalog use the shortened names. The external
 [relocation map](../saved_sessions/session-renames.json) resolves names in dated
