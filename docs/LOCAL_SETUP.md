@@ -1,26 +1,35 @@
 # Local setup
 
-Last checked against the recorded local setup: **2026-10-26**. This is a
-machine-specific reproduction guide, not a portable dependency lock or a fresh
-installation verification. See [AGENTS.md](../AGENTS.md) for editing rules and
-[reproduction status](REPRODUCTION_STATUS.md) for what actually completed.
+Last checked: **2026-11-01** (RTX 5090 host, fresh installation verified);
+original RTX 3060 host recorded **2026-10-26**. This is a machine-specific
+reproduction guide, not a portable dependency lock. See [AGENTS.md](../AGENTS.md)
+for editing rules and [reproduction status](REPRODUCTION_STATUS.md) for what
+actually completed.
 
 ## Hardware and OS
 
-- Ubuntu 22.04.5 LTS, x86_64.
-- Intel Core i7-11800H, 16 logical CPUs; 38 GB RAM.
-- NVIDIA GeForce RTX 3060 Laptop GPU, 6144 MiB VRAM.
-- NVIDIA driver 580.178.04.
-- X11 desktop available for GUI runs; headless VLM runs do not require DISPLAY.
+Two hosts have run the full pipeline. The **RTX 5090 host is the latest running
+setup**; the original RTX 3060 laptop setup also works and produced every archive
+before 2026-10-31.
 
-The 6 GB GPU is tight: the full model stack uses roughly 5.8 GB while running.
-Close other GPU-heavy applications before navigation runs.
+| | RTX 5090 host (current) | RTX 3060 laptop (original, also works) |
+|---|---|---|
+| OS / kernel | Ubuntu 24.04.5 LTS, 7.0.0-42 | Ubuntu 22.04.5 LTS |
+| CPU / RAM | AMD Ryzen 9 9950X3D, 32 logical CPUs; 60 GB | Intel Core i7-11800H, 16 logical CPUs; 38 GB |
+| GPU / driver | GeForce RTX 5090 (Blackwell, sm_120), 32,607 MiB; 595.99.02 (`nvidia-driver-595-open`) | GeForce RTX 3060 Laptop, 6,144 MiB; 580.178.04 |
+| System compiler | gcc 13.3 | (not recorded) |
+| Verified by | 98/98 offline tests, CLIP 5-episode smoke, full 316-episode 1017 Game run (2026-10-31) | All runs up to the 2026-10-30 cohort |
+
+Both use X11 for GUI runs; headless VLM runs do not require DISPLAY. On the
+6 GB laptop GPU the full model stack uses roughly 5.8 GB, so close other
+GPU-heavy applications first; the RTX 5090 run peaked around 6.5 GB of 32 GB.
 
 ## Python environment
 
 - Miniforge: `$HOME/miniforge3`; conda environment: `vlngame`.
-- Python 3.10.22; CMake 3.25.3.
-- CUDA toolkit 12.1.66 (`nvcc`) is installed inside the conda environment.
+- Python 3.10.22; CMake 3.25.3 on both hosts.
+- CUDA toolkit inside the conda environment: 12.8 (`nvidia/label/cuda-12.8.1`)
+  on the RTX 5090 host; 12.1.66 on the RTX 3060 host.
 
 From the repository root:
 
@@ -35,23 +44,51 @@ export GSA_PATH="$HOME/Grounded-Segment-Anything"
 
 ### Recorded dependencies
 
-| Component | Recorded version/setup |
-|---|---|
-| PyTorch / torchvision / torchaudio | 2.1.0+cu121 / 0.16.0+cu121 / 2.1.0 |
-| habitat-sim | 0.2.1, headless build |
-| habitat-lab | 0.2.1, editable install |
-| GroundingDINO | Editable CUDA build from GSA |
-| segment-anything | Editable install |
-| MobileSAM | GSA `EfficientSAM/MobileSAM`, symlinked as `MobileSAM` |
-| open_clip_torch | 2.24.0; ViT-H-14 `laion2b_s32b_b79k` |
-| Open3D | 0.18.0 |
-| numpy / numpy-quaternion | 1.23.5 / 2023.0.4 |
-| transformers / tokenizers | 4.36.2 / 0.15.2 |
-| huggingface-hub / safetensors | 0.25.2 / 0.4.5 |
-| faiss-cpu / supervision | 1.7.4 / 0.21.0 |
-| opencv-python | 4.10.0.84; headless 4.11 also present via supervision |
-| scikit-image / scikit-fmm | 0.24.0 / 2023.4.2 |
-| openai | 0.28.1 |
+| Component | RTX 5090 host (current) | RTX 3060 host (original) |
+|---|---|---|
+| PyTorch / torchvision / torchaudio | 2.7.1+cu128 / 0.22.1+cu128 / 2.7.1+cu128 | 2.1.0+cu121 / 0.16.0+cu121 / 2.1.0 |
+| habitat-sim | 0.2.1, headless build with system gcc 13 | 0.2.1, headless build |
+| habitat-lab | 0.2.1, editable install | 0.2.1, editable install |
+| GroundingDINO | Editable CUDA build for sm_120, `scalar_type()` fix | Editable CUDA build from GSA |
+| segment-anything | Editable install | Editable install |
+| pytorch3d | 0.7.8 (`stable`), CUDA build for sm_120 | (not recorded) |
+| MobileSAM | GSA `EfficientSAM/MobileSAM`, loaded via `sys.path` | GSA `EfficientSAM/MobileSAM`, symlinked as `MobileSAM` |
+| open_clip_torch | 2.24.0; ViT-H-14 `laion2b_s32b_b79k` | same |
+| Open3D | 0.18.0 (EGL headless confirmed) | 0.18.0 |
+| numpy / numpy-quaternion | 1.23.5 / 2023.0.4 | same |
+| transformers / tokenizers | 4.36.2 / 0.15.2 | same |
+| huggingface-hub / safetensors | 0.25.2 / 0.4.5 | same |
+| faiss-cpu / supervision | 1.7.4 / 0.21.0 | same |
+| opencv-python | 4.10.0.84 | 4.10.0.84; headless 4.11 also present via supervision |
+| scikit-image / scikit-fmm | 0.24.0 / 2023.4.2 | same |
+| openai | 0.28.1 | same |
+
+### RTX 5090 host build notes (2026-10-31)
+
+Blackwell (sm_120) needs PyTorch 2.7+ with CUDA 12.8; the 2.1/12.1 pins cannot
+run on it. The CUDA toolkit's conda gcc cannot see the system OpenGL/EGL
+libraries, so habitat-sim is built with the system compiler and gcc 13 needs
+standard headers its 2021 bundled dependencies omit. Sources stay outside the
+repository (`~/habitat-sim`, `~/habitat-lab`, `~/Grounded-Segment-Anything`).
+Privileged prerequisites (run by the user): `git git-lfs build-essential cmake
+libegl1-mesa-dev libgl1-mesa-dev libglfw3-dev` and `nvidia-driver-595-open`.
+
+```bash
+# habitat-sim, from ~/habitat-sim at tag v0.2.1 (setuptools<70 in the env)
+env -u CMAKE_ARGS -u CFLAGS -u CPPFLAGS -u LDFLAGS -u AR -u RANLIB -u LD \
+  CC=/usr/bin/gcc CXX=/usr/bin/g++ \
+  CXXFLAGS="-include cstdint -include tuple -include limits -include stdexcept -include string -include utility -include algorithm" \
+  python setup.py install --headless
+# CUDA extensions (GroundingDINO, pytorch3d)
+export CUDA_HOME="$CONDA_PREFIX" TORCH_CUDA_ARCH_LIST="12.0" FORCE_CUDA=1
+pip install --no-build-isolation -e "$HOME/Grounded-Segment-Anything/GroundingDINO"
+pip install --no-build-isolation "git+https://github.com/facebookresearch/pytorch3d.git@stable"
+```
+
+GroundingDINO's `ms_deform_attn_cuda.cu` needs `value.type()` →
+`value.scalar_type()` (two dispatch lines) for PyTorch 2.7; upstream made the
+same fix. The HM3D scenes and episode datasets were copied from the original
+host, keeping its documented data compatibility edits.
 
 `requirements.txt` remains the original paper-repo file; it is not a lock for the
 local environment. Reasons for the local pins and build adjustments are retained
@@ -164,6 +201,24 @@ GPT-6 Luna and direct DeepSeek `deepseek-flash`. Luna omits temperature and uses
 checks do not certify current provider availability. The paper used GPT-4o;
 results from other models/providers must retain their actual model labels.
 
+**DeepSeek V4.1 Flash 1017 via OpenRouter (RTX 5090 host, 2026-10-31).** Direct
+`api.deepseek.com` is unreachable from that host's network (TLS reset for all
+deepseek.com hosts), so its full Game run used OpenRouter, pinned to the DeepSeek
+provider. That provider requires the account's OpenRouter privacy setting to
+allow paid-training providers. Effective settings (no registry entry):
+
+```bash
+export VLN_MODEL="deepseek/deepseek-v4.1-flash-1017"
+export VLN_API_BASE="https://openrouter.ai/api/v1"
+export VLN_API_KEY="$OPENROUTER_API_KEY"
+export VLN_MODEL_OPTIONS='{"reasoning":{"enabled":false},"provider":{"only":["deepseek"],"allow_fallbacks":false}}'
+export VLN_MODEL_SUPPORTS_TEMPERATURE=1
+```
+
+Set `VLN_MODEL_OPTIONS` explicitly: otherwise a `deepseek...` model name gets the
+direct-API `thinking` option, which is not OpenRouter's parameter. Keep this route
+labelled separately from direct `deepseek-flash` results.
+
 ### Jev 1.14 backend and frozen parsing
 
 Select **Jev 1.14** in `demo.py`, or configure the effective environment for direct
@@ -260,6 +315,14 @@ rerunning this one-time cleanup. Read-only inspection after resealing:
 
 ```bash
 python saved_sessions/cleanup_sessions.py verify
+```
+
+This verifier is scoped to the eight 2026-10-30 cohort archives and asserts that
+exact folder set. Since the 2026-10-31 session was added, it stops at that assertion
+(change 24). Verify newer sessions with their own read-only script:
+
+```bash
+python saved_sessions/20261031-deepseek-v4.1-flash-1017-openrouter-316ep/verify_session.py
 ```
 
 Do not rerun old per-archive `verify_final.py`, `seal_archive.py` or launch writers:

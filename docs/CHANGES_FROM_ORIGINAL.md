@@ -712,6 +712,30 @@ The commit `58ca7f4` is a clean fork from the original paper's code repo.
       the new locations, with identical run identities/metrics. No archive file
       bytes changed and no seal regeneration was required. No model/API calls.
 
+24. **RTX 5090 / Ubuntu 24.04 host becomes the latest running setup** —
+    2026-10-31 to 2026-11-01. Environment-only; no repository source, prompt,
+    configuration, algorithm or metric change.
+    - The user moved the project to a new host (RTX 5090, Ubuntu 24.04, driver
+      595.99.02). The original RTX 3060 laptop / Ubuntu 22.04 setup still works;
+      both are documented in [local setup](LOCAL_SETUP.md#hardware-and-os).
+    - Blackwell (sm_120) cannot run PyTorch 2.1/CUDA 12.1, so this host uses
+      PyTorch 2.7.1+cu128 with an in-env CUDA 12.8 toolkit. Other Python pins are
+      unchanged. habitat-sim 0.2.1 is built with the system gcc 13 and forced
+      standard-header includes. External GroundingDINO gets the upstream
+      `value.type()` → `value.scalar_type()` dispatch fix. pytorch3d 0.7.8 is
+      built for sm_120.
+    - Verification: 98/98 offline tests; GroundingDINO/MobileSAM/pytorch3d/Open3D
+      EGL GPU checks; habitat-sim HM3D load/render; CLIP 5-episode smoke (exit 0);
+      and the full DeepSeek V4.1 Flash 1017 OpenRouter Game run, 316/316 with
+      actual exit 0. That run's pipeline source hashes match the Jev Generator
+      archive.
+    - The 1017 run's archive was sealed with heatmaps removed under change 22,
+      after user confirmation on 2026-11-01. The cohort tool
+      `cleanup_sessions.py verify` covers only the eight 2026-10-30 archives and
+      asserts that exact folder set, so it now stops at that assertion. The cohort
+      inventories were re-verified separately (37,624 files, unchanged), and the
+      new archive has its own read-only `verify_session.py`.
+
 #### Data compatibility changes
 
 The data were downloaded from [Github](https://github.com/matterport/habitat-matterport-3dresearch).
@@ -752,6 +776,13 @@ These changes live in the conda environment:
 - GroundingDINO built with `--no-build-isolation` and the conda CUDA toolkit
   to avoid a PyTorch/CUDA mismatch.
 - MobileSAM because the 6 GB VRAM limit makes SAM ViT-H impractical.
+
+RTX 5090 host additions (change 24): PyTorch 2.7.1+cu128 / torchvision 0.22.1 /
+torchaudio 2.7.1 and the CUDA 12.8 toolkit for sm_120; `setuptools<70` for
+habitat's `setup.py install`; habitat-sim built with the system gcc and forced
+standard-header includes; GroundingDINO dispatch `scalar_type()` fix; pytorch3d
+0.7.8 built for sm_120. MobileSAM remains in use there as well. It is also the
+upstream `--sam_variant` default, which does not offer ViT-H.
 
 ## Earlier validation notes (historical)
 

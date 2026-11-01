@@ -133,9 +133,9 @@ add votes or change Game decoding. Jev's approved differences are specified abov
 Smoke checks verify loading/completed metrics and either GUI controls or exact
 headless inputs/no window. Offline code checks: `python -m unittest discover -s tests -v`.
 
-Latest verified state (2026-10-31): CLIP and DeepSeek/Jev Game, Generator and Ranking
-completed 316/316; mini stopped at 188/316 on a key limit. Eight retained archives are post-cleanup sealed/verified; monitoring is complete.
-Current folder names and full results: [session index](saved_sessions/README.md), [status page](docs/REPRODUCTION_STATUS.md). No session is pending or running.
+Latest verified state (2026-11-01): CLIP and DeepSeek/Jev Game, Generator and Ranking, plus DeepSeek 1017 Game (OpenRouter),
+completed 316/316; mini stopped at 188/316 on a key limit. Nine archives are sealed and verified. Latest running setup: RTX 5090 / Ubuntu 24.04
+(RTX 3060 / 22.04 also works; see [local setup](docs/LOCAL_SETUP.md#hardware-and-os)). [Session index](saved_sessions/README.md), [status page](docs/REPRODUCTION_STATUS.md). No session is running.
 
 ## Documentation maintenance
 

@@ -1,16 +1,28 @@
 # Reproduction status
 
-Last updated: **2026-10-31**. This page describes the latest recorded outcomes,
+Last updated: **2026-11-01**. This page describes the latest recorded outcomes,
 not live process monitoring. Read [AGENTS.md](../AGENTS.md) for current editing
 rules, [LOCAL_SETUP.md](LOCAL_SETUP.md) for operation and
 [CHANGES_FROM_ORIGINAL.md](CHANGES_FROM_ORIGINAL.md) for approval/history.
 
 ## Current state and next decision
 
+**DeepSeek V4.1 Flash 1017 Game completed on the RTX 5090 host (2026-10-31, change 24).**
+`deepseek/deepseek-v4.1-flash-1017` via OpenRouter, pinned to the DeepSeek provider,
+thinking disabled, headless `vlm_game`: **316/316**, actual exit **0**, 106 successes,
+SR 0.335443, SPL 0.117644, DTG 4.422881 m, runtime 5h04m29s. 10,311 API attempts with
+25 recovered empty-content retries and no terminal failure. 3,119 exact input JPEGs
+were verified, heatmaps removed and the archive sealed
+([session](../saved_sessions/20261031-deepseek-v4.1-flash-1017-openrouter-316ep/README.md)).
+Different route and snapshot from the direct `deepseek-flash` Game run; label it
+separately and do not merge the two. The RTX 5090 / Ubuntu 24.04 host is now the latest
+running setup; the RTX 3060 / Ubuntu 22.04 setup also works
+([local setup](LOCAL_SETUP.md#hardware-and-os)). No session is running.
+
 **Performance analysis (2026-10-31, read-only):** [Stage I executive summary](EXECUTIVE_SUMMARY_STAGE1.md); details in [PERFORMANCE_ANALYSIS.md](PERFORMANCE_ANALYSIS.md).
 Candidate supply is the same in every run, and the losses happen in exploitation. Game makes no net
 difference for DeepSeek and is significantly worse for Jev, because Jev's Discriminator is biased
-low and barely informative. Proposals only; no change approved. The in-progress 1017 OpenRouter run is excluded.
+low and barely informative. Proposals only; no change approved. The 1017 OpenRouter run, then still in progress, is excluded.
 [EQUILIBRIUM_REVIEW.md](EQUILIBRIUM_REVIEW.md) explains why the paper's equilibrium gain (+0.3 pp GPT-4o,
 +2.2 pp mini; single runs) is within noise, and how the code differs from the Consensus Game/paper equations.
 
@@ -312,6 +324,7 @@ The paper used GPT-4o; GPT-4o-mini results must keep their actual model label.
 | Jev 1.14 Game, native probability means/frozen parsing/headless | 316/316 | 0.215190 | 0.063983 | 4.908385 | 68 successes, actual exit 0; [verified summary](../saved_sessions/20261028-jev-1.14-vln-game-316ep/archive-summary.json) |
 | Jev 1.14 Ranking, five-Choice mean/frozen parsing/headless | 316/316 | 0.275316 | 0.074048 | 4.734162 | 87 successes, actual exit 0; [verified summary](../saved_sessions/20261029-jev-1.14-vln-ranking-316ep/archive-summary.json) |
 | Jev 1.14 Generator, one Choice/frozen parsing/headless | 316/316 | 0.300633 | 0.081035 | 4.376207 | 95 successes, actual exit 0; [verified summary](../saved_sessions/20261030-jev-1.14-vln-generator-316ep/archive-summary.json) |
+| DeepSeek V4.1 Flash 1017 Game, OpenRouter DeepSeek provider/headless, RTX 5090 host | 316/316 | 0.335443 | 0.117644 | 4.422881 | 106 successes, actual exit 0; [sealed session](../saved_sessions/20261031-deepseek-v4.1-flash-1017-openrouter-316ep/session.json) |
 
 Paper Table III's CLIP baseline reports SR 0.253, SPL 0.106, DTG 4.697. The local
 full CLIP run is available for comparison; its completion supersedes old "baseline
